@@ -1,6 +1,12 @@
 import { Account, Category, CreditCard } from '../types/finance';
 
-export type GeminiModelType = 'gemini-2.5-flash' | 'gemini-2.5-pro';
+export type GeminiModelType =
+  | 'gemini-3.0-flash'
+  | 'gemini-3.9-flash'
+  | 'gemini-3-flash-preview'
+  | 'gemini-2.5-flash'
+  | 'gemini-2.5-pro'
+  | string;
 
 export interface GeminiExtractedTransaction {
   tipo: 'GASTO' | 'TARJETA' | 'INGRESO' | 'TRANSFERENCIA';
@@ -24,51 +30,209 @@ const getYesterdayISO = (): string => {
   return d.toISOString().split('T')[0];
 };
 
+const FALLBACK_FLASH_MODELS = [
+  'gemini-3.9-flash',
+  'gemini-3.0-flash',
+  'gemini-3-flash-preview',
+  'gemini-3.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-flash-latest',
+];
+
+const FALLBACK_PRO_MODELS = [
+  'gemini-3.0-pro',
+  'gemini-3-pro-preview',
+  'gemini-2.5-pro',
+  'gemini-pro-latest',
+];
+
+let cachedWorkingModel: string | null = null;
+
+/**
+ * Obtiene dinámicamente desde Google AI Studio los modelos habilitados para la API Key del usuario.
+ */
+async function fetchAvailableModelsForKey(apiKey: string): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data?.models)) return [];
+
+    return data.models
+      .filter(
+        (m: any) =>
+          Array.isArray(m?.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes('generateContent') &&
+          typeof m?.name === 'string'
+      )
+      .map((m: any) => (m.name as string).replace(/^models\//, ''))
+      .filter((name: string) => name.startsWith('gemini-') && !name.includes('tts') && !name.includes('image') && !name.includes('embedding'));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Extrae nombres de modelos sugeridos dentro del mensaje de error de Google (si Google recomienda uno específico).
+ */
+function extractSuggestedModelsFromError(errMsg: string, failedModel: string): string[] {
+  const matches = errMsg.match(/gemini-[a-z0-9.-]+/gi) || [];
+  return Array.from(new Set(matches.map((m) => m.toLowerCase()))).filter(
+    (m) => m !== failedModel.toLowerCase()
+  );
+}
+
+/**
+ * Ejecuta una petición generateContent a Gemini con auto-detección de modelo compatible
+ * si el modelo elegido no está disponible para cuentas nuevas.
+ */
+async function callGeminiWithAutoFallback(
+  apiKey: string,
+  preferredModel: string,
+  bodyPayload: Record<string, any>
+): Promise<{
+  ok: boolean;
+  resultJson?: any;
+  resolvedModel: string;
+  errorMessage?: string;
+}> {
+  const cleanPreferred = (preferredModel || 'gemini-3.0-flash').replace(/^models\//, '').trim();
+  const isProPreferred = cleanPreferred.includes('pro');
+
+  const tried = new Set<string>();
+  const trySingleModel = async (
+    modelName: string
+  ): Promise<{ ok: boolean; status: number; json: any; errMsg: string }> => {
+    tried.add(modelName);
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(
+      apiKey
+    )}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyPayload),
+    });
+    const json = await response.json().catch(() => null);
+    if (response.ok) {
+      return { ok: true, status: response.status, json, errMsg: '' };
+    }
+    const errMsg =
+      json?.error?.message || `Error HTTP ${response.status} al conectar con ${modelName}.`;
+    return { ok: false, status: response.status, json, errMsg };
+  };
+
+  // 1. Intentar primero el modelo preferido (o el último modelo funcional en caché si coincide en familia)
+  const firstCandidate =
+    cachedWorkingModel && cachedWorkingModel.includes(isProPreferred ? 'pro' : 'flash')
+      ? cachedWorkingModel
+      : cleanPreferred;
+
+  const firstAttempt = await trySingleModel(firstCandidate);
+  if (firstAttempt.ok) {
+    cachedWorkingModel = firstCandidate;
+    return { ok: true, resultJson: firstAttempt.json, resolvedModel: firstCandidate };
+  }
+
+  // Si el error es de API Key inválida (400 API_KEY_INVALID o 403), no tiene sentido probar otros modelos
+  const lowerErr = firstAttempt.errMsg.toLowerCase();
+  if (
+    lowerErr.includes('api key not valid') ||
+    lowerErr.includes('api_key_invalid') ||
+    firstAttempt.status === 401
+  ) {
+    return {
+      ok: false,
+      resolvedModel: cleanPreferred,
+      errorMessage: 'La API Key ingresada no es válida. Verifica que esté bien copiada desde Google AI Studio.',
+    };
+  }
+
+  // 2. Construir lista de candidatos prioritarios (incluyendo sugeridos en el error + lista oficial de la cuenta)
+  const suggestedFromError = extractSuggestedModelsFromError(firstAttempt.errMsg, firstCandidate);
+  const accountModels = await fetchAvailableModelsForKey(apiKey);
+
+  // Ordenar los modelos de la cuenta priorizando 3.x / flash (o pro)
+  const sortedAccountModels = [...accountModels].sort((a, b) => {
+    const aMatchesTier = a.includes(isProPreferred ? 'pro' : 'flash') ? 1 : 0;
+    const bMatchesTier = b.includes(isProPreferred ? 'pro' : 'flash') ? 1 : 0;
+    if (aMatchesTier !== bMatchesTier) return bMatchesTier - aMatchesTier;
+    return b.localeCompare(a); // versiones más recientes (ej. gemini-3.x) primero
+  });
+
+  const candidates = [
+    ...suggestedFromError,
+    cleanPreferred,
+    ...(isProPreferred ? FALLBACK_PRO_MODELS : FALLBACK_FLASH_MODELS),
+    ...sortedAccountModels,
+  ];
+
+  let lastErrorMsg = firstAttempt.errMsg;
+
+  for (const candidate of candidates) {
+    if (!candidate || tried.has(candidate)) continue;
+    const attempt = await trySingleModel(candidate);
+    if (attempt.ok) {
+      cachedWorkingModel = candidate;
+      return { ok: true, resultJson: attempt.json, resolvedModel: candidate };
+    }
+    lastErrorMsg = attempt.errMsg;
+  }
+
+  return {
+    ok: false,
+    resolvedModel: cleanPreferred,
+    errorMessage: lastErrorMsg,
+  };
+}
+
 /**
  * Prueba la conexión con Google Gemini API usando la API Key y el modelo seleccionado.
+ * Si el modelo no está disponible para nuevos usuarios, detecta y selecciona automáticamente el modelo activo en su cuenta.
  */
 export async function testGeminiConnection(
   apiKey: string,
-  model: GeminiModelType = 'gemini-2.5-flash'
-): Promise<{ ok: boolean; message: string }> {
+  model: GeminiModelType = 'gemini-3.0-flash'
+): Promise<{ ok: boolean; message: string; resolvedModel?: string }> {
   const trimmedKey = apiKey.trim();
   if (!trimmedKey) {
     return { ok: false, message: 'Ingresa una Gemini API Key válida primero.' };
   }
 
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-      trimmedKey
-    )}`;
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: 'Responde únicamente con JSON: {"status":"ok"}' }],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0,
-          maxOutputTokens: 30,
+    const res = await callGeminiWithAutoFallback(trimmedKey, model, {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: 'Responde únicamente con JSON: {"status":"ok"}' }],
         },
-      }),
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0,
+        maxOutputTokens: 30,
+      },
     });
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => null);
-      const errMsg =
-        errData?.error?.message || `Error HTTP ${response.status} al conectar con Gemini.`;
-      return { ok: false, message: errMsg };
+    if (!res.ok) {
+      return {
+        ok: false,
+        message: res.errorMessage || 'No fue posible conectar con Gemini.',
+      };
     }
+
+    const switchedNote =
+      res.resolvedModel !== model
+        ? ` (Se ajustó automáticamente al modelo compatible: ${res.resolvedModel})`
+        : '';
 
     return {
       ok: true,
-      message: `Conexión exitosa con ${model}. ¡Listo para dictado por voz y categorización IA!`,
+      resolvedModel: res.resolvedModel,
+      message: `¡Conexión exitosa con ${res.resolvedModel}!${switchedNote} Listo para dictado por voz y categorización IA.`,
     };
   } catch (error: any) {
     return {
@@ -149,34 +313,25 @@ REGLAS ESTRICTAS:
 10. "aplica4x1000": true si es GASTO o TRANSFERENCIA desde una cuenta que tenga cobra4x1000=true (o si el usuario lo pide explícitamente).
 11. "resumenHumano": frase corta, cálida y clara en español confirmando qué se va a registrar.`;
 
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-        trimmedKey
-      )}`;
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  text: `${systemPrompt}\n\nComando de voz del usuario: "${transcript.trim()}"`,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.1,
+      const res = await callGeminiWithAutoFallback(trimmedKey, model, {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: `${systemPrompt}\n\nComando de voz del usuario: "${transcript.trim()}"`,
+              },
+            ],
           },
-        }),
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        const rawText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (res.ok && res.resultJson) {
+        const rawText = res.resultJson?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (rawText) {
           const parsed = JSON.parse(rawText) as GeminiExtractedTransaction;
           return {
@@ -214,37 +369,28 @@ export async function predictCategoryWithGemini(params: {
   if (filtered.length === 0) return null;
 
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-      trimmedKey
-    )}`;
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: `Elige el "categoriaId" más apropiado para el concepto "${concept}" (${type}) de esta lista: ${JSON.stringify(
-                  filtered.map((c) => ({ id: c.id, nombre: c.name }))
-                )}. Responde solo JSON: {"categoriaId": "..."}`,
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0,
-          maxOutputTokens: 40,
+    const res = await callGeminiWithAutoFallback(trimmedKey, model, {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: `Elige el "categoriaId" más apropiado para el concepto "${concept}" (${type}) de esta lista: ${JSON.stringify(
+                filtered.map((c) => ({ id: c.id, nombre: c.name }))
+              )}. Responde solo JSON: {"categoriaId": "..."}`,
+            },
+          ],
         },
-      }),
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0,
+        maxOutputTokens: 40,
+      },
     });
 
-    if (!response.ok) return null;
-    const json = await response.json();
-    const raw = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!res.ok || !res.resultJson) return null;
+    const raw = res.resultJson?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed?.categoriaId && filtered.some((c) => c.id === parsed.categoriaId)) {

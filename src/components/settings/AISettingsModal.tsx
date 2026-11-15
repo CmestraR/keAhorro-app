@@ -17,6 +17,39 @@ import { CustomIcon } from '../common/CustomIcon';
 import { Text, TextInput } from '../common/AppText';
 import { TouchableOpacity } from '../common/Touchable';
 
+const MODEL_OPTIONS: Array<{
+  id: string;
+  title: string;
+  badge: string;
+  description: string;
+  accent: 'success' | 'primary' | 'info';
+}> = [
+  {
+    id: 'gemini-3.0-flash',
+    title: 'Gemini 3 Flash (3.0 / 3.9)',
+    badge: 'Por defecto • Nuevos usuarios',
+    description:
+      'Compatible con nuevas cuentas de Google AI Studio. Auto-detecta la versión Flash 3.x activa en tu llave.',
+    accent: 'success',
+  },
+  {
+    id: 'gemini-2.5-flash',
+    title: 'gemini-2.5-flash',
+    badge: 'Clásico • Ultra rápido',
+    description:
+      'Ideal para cuentas existentes con acceso a la serie 2.5 (si tu llave es nueva, usará 3.x automáticamente).',
+    accent: 'info',
+  },
+  {
+    id: 'gemini-2.5-pro',
+    title: 'Gemini Pro (2.5 / 3.0 Pro)',
+    badge: 'Análisis profundo',
+    description:
+      'Mayor razonamiento para instrucciones financieras múltiples o complejas.',
+    accent: 'primary',
+  },
+];
+
 export const AISettingsModal: React.FC = () => {
   const {
     isAISettingsModalOpen,
@@ -48,7 +81,7 @@ export const AISettingsModal: React.FC = () => {
   useEffect(() => {
     if (isAISettingsModalOpen) {
       setGeminiKeyDraft(geminiApiKey);
-      setModelDraft(geminiModel);
+      setModelDraft(geminiModel || 'gemini-3.0-flash');
       setMapsKeyDraft(googleMapsApiKey);
       setMapsEnabledDraft(googleMapsEnabled);
       setVoiceHoldDraft(voiceHoldEnabled);
@@ -69,12 +102,14 @@ export const AISettingsModal: React.FC = () => {
     setIsTesting(true);
     setTestResult(null);
     const result = await testGeminiConnection(geminiKeyDraft, modelDraft);
-    setTestResult(result);
+    setTestResult({ ok: result.ok, message: result.message });
     setIsTesting(false);
     if (result.ok) {
+      const finalModel = result.resolvedModel || modelDraft;
+      setModelDraft(finalModel);
       await updateAISettings({
         geminiApiKey: geminiKeyDraft.trim(),
-        geminiModel: modelDraft,
+        geminiModel: finalModel,
       });
     }
   };
@@ -95,6 +130,17 @@ export const AISettingsModal: React.FC = () => {
     closeAISettingsModal();
   };
 
+  const isOptionSelected = (optId: string) => {
+    if (modelDraft === optId) return true;
+    if (
+      optId === 'gemini-3.0-flash' &&
+      !MODEL_OPTIONS.some((o) => o.id === modelDraft)
+    ) {
+      return true;
+    }
+    return false;
+  };
+
   return (
     <Modal
       visible={isAISettingsModalOpen}
@@ -103,13 +149,14 @@ export const AISettingsModal: React.FC = () => {
       statusBarTranslucent
       onRequestClose={closeAISettingsModal}
     >
-      <Pressable style={styles.backdrop} onPress={closeAISettingsModal}>
-        <Pressable
+      <View style={styles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeAISettingsModal} />
+
+        <View
           style={[
             styles.sheet,
             { backgroundColor: colors.surface, borderColor: colors.border },
           ]}
-          onPress={(e) => e.stopPropagation()}
         >
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.divider }]}>
@@ -123,9 +170,6 @@ export const AISettingsModal: React.FC = () => {
                 <CustomIcon name="Sparkles" size={20} color={colors.primaryLight} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.headerTag, { color: colors.primaryLight }]}>
-                  FASE IA-1 • ALMACENAMIENTO LOCAL SEGURO
-                </Text>
                 <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
                   Configuración de IA & Integraciones
                 </Text>
@@ -140,8 +184,12 @@ export const AISettingsModal: React.FC = () => {
           </View>
 
           <ScrollView
-            showsVerticalScrollIndicator={false}
+            style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={true}
+            nestedScrollEnabled={true}
+            overScrollMode="never"
+            bounces={false}
             keyboardShouldPersistTaps="handled"
           >
             {/* 1. Gemini API Key */}
@@ -210,7 +258,7 @@ export const AISettingsModal: React.FC = () => {
                   <CustomIcon name="Zap" size={16} color={colors.primaryLight} />
                 )}
                 <Text style={[styles.testConnectionText, { color: colors.primaryLight }]}>
-                  {isTesting ? 'Probando conexión con Gemini...' : 'Probar conexión'}
+                  {isTesting ? 'Probando y detectando modelo compatible...' : 'Probar conexión'}
                 </Text>
               </TouchableOpacity>
 
@@ -255,93 +303,62 @@ export const AISettingsModal: React.FC = () => {
                 </Text>
               </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.modelOptionCard,
-                  {
-                    backgroundColor: colors.surfaceElevated,
-                    borderColor:
-                      modelDraft === 'gemini-2.5-flash'
-                        ? colors.success
-                        : colors.borderLight,
-                  },
-                  modelDraft === 'gemini-2.5-flash' && {
-                    backgroundColor: alpha(colors.success, 0.14),
-                  },
-                ]}
-                onPress={() => setModelDraft('gemini-2.5-flash')}
-              >
-                <View style={{ flex: 1 }}>
-                  <View style={styles.modelTitleBadgeRow}>
-                    <Text style={[styles.modelTitle, { color: colors.textPrimary }]}>
-                      gemini-2.5-flash
-                    </Text>
-                    <View
-                      style={[
-                        styles.recommendedPill,
-                        { backgroundColor: colors.successBg },
-                      ]}
-                    >
-                      <Text style={[styles.recommendedPillText, { color: colors.success }]}>
-                        Por defecto • Ultra rápido
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.modelSub, { color: colors.textSecondary }]}>
-                    Ideal para dictado por voz al instante y categorización en milisegundos.
-                  </Text>
-                </View>
-                <CustomIcon
-                  name={modelDraft === 'gemini-2.5-flash' ? 'CheckCircle2' : 'Circle'}
-                  size={20}
-                  color={modelDraft === 'gemini-2.5-flash' ? colors.success : colors.textMuted}
-                />
-              </TouchableOpacity>
+              {MODEL_OPTIONS.map((opt) => {
+                const selected = isOptionSelected(opt.id);
+                const accentColor =
+                  opt.accent === 'success'
+                    ? colors.success
+                    : opt.accent === 'info'
+                    ? colors.info
+                    : colors.primaryLight;
+                const displayTitle =
+                  selected && opt.id === 'gemini-3.0-flash' && modelDraft !== 'gemini-3.0-flash'
+                    ? `${opt.title} (${modelDraft})`
+                    : opt.title;
 
-              <TouchableOpacity
-                style={[
-                  styles.modelOptionCard,
-                  {
-                    backgroundColor: colors.surfaceElevated,
-                    borderColor:
-                      modelDraft === 'gemini-2.5-pro'
-                        ? colors.primary
-                        : colors.borderLight,
-                  },
-                  modelDraft === 'gemini-2.5-pro' && {
-                    backgroundColor: alpha(colors.primary, 0.15),
-                  },
-                ]}
-                onPress={() => setModelDraft('gemini-2.5-pro')}
-              >
-                <View style={{ flex: 1 }}>
-                  <View style={styles.modelTitleBadgeRow}>
-                    <Text style={[styles.modelTitle, { color: colors.textPrimary }]}>
-                      gemini-2.5-pro
-                    </Text>
-                    <View
-                      style={[
-                        styles.recommendedPill,
-                        { backgroundColor: alpha(colors.primary, 0.2) },
-                      ]}
-                    >
-                      <Text
-                        style={[styles.recommendedPillText, { color: colors.primaryLight }]}
-                      >
-                        Análisis profundo
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.modelOptionCard,
+                      {
+                        backgroundColor: colors.surfaceElevated,
+                        borderColor: selected ? accentColor : colors.borderLight,
+                      },
+                      selected && {
+                        backgroundColor: alpha(accentColor, 0.14),
+                      },
+                    ]}
+                    onPress={() => setModelDraft(opt.id)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.modelTitleBadgeRow}>
+                        <Text style={[styles.modelTitle, { color: colors.textPrimary }]}>
+                          {displayTitle}
+                        </Text>
+                        <View
+                          style={[
+                            styles.recommendedPill,
+                            { backgroundColor: alpha(accentColor, 0.18) },
+                          ]}
+                        >
+                          <Text style={[styles.recommendedPillText, { color: accentColor }]}>
+                            {opt.badge}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.modelSub, { color: colors.textSecondary }]}>
+                        {opt.description}
                       </Text>
                     </View>
-                  </View>
-                  <Text style={[styles.modelSub, { color: colors.textSecondary }]}>
-                    Mayor razonamiento para instrucciones financieras múltiples o complejas.
-                  </Text>
-                </View>
-                <CustomIcon
-                  name={modelDraft === 'gemini-2.5-pro' ? 'CheckCircle2' : 'Circle'}
-                  size={20}
-                  color={modelDraft === 'gemini-2.5-pro' ? colors.primaryLight : colors.textMuted}
-                />
-              </TouchableOpacity>
+                    <CustomIcon
+                      name={selected ? 'CheckCircle2' : 'Circle'}
+                      size={20}
+                      color={selected ? accentColor : colors.textMuted}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {/* 3. Google Maps / Places API Key */}
@@ -462,8 +479,8 @@ export const AISettingsModal: React.FC = () => {
               <Text style={styles.saveBtnText}>Guardar Configuración de IA</Text>
             </TouchableOpacity>
           </ScrollView>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 };
@@ -478,8 +495,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
-    maxHeight: '92%',
-    paddingBottom: 28,
+    maxHeight: '90%',
+    overflow: 'hidden',
+  },
+  scrollView: {
+    flexGrow: 0,
   },
   header: {
     flexDirection: 'row',
@@ -503,15 +523,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTag: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
   headerTitle: {
     fontSize: 17,
     fontWeight: 'bold',
-    marginTop: 2,
   },
   closeBtn: {
     width: 38,
@@ -522,6 +536,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 18,
+    paddingBottom: 38,
     gap: 14,
   },
   sectionCard: {

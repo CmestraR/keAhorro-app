@@ -118,8 +118,10 @@ export const SettingsScreen: React.FC = () => {
     <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <ScrollView
         style={styles.container}
-        contentContainerStyle={{ paddingBottom: Layout.bottomNavSpace }}
+        contentContainerStyle={{ paddingBottom: Layout.bottomNavSpace + 24 }}
         showsVerticalScrollIndicator={false}
+        overScrollMode="never"
+        bounces={false}
       >
         {/* Header */}
         <View style={styles.header}>
