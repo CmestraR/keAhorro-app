@@ -7,7 +7,6 @@ import {
   Platform,
   ActivityIndicator,
   Pressable,
-  TextInput as RNTextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFinancial } from '../../context/FinancialContext';
@@ -23,6 +22,34 @@ import { CardPurchase, Transaction, TransactionType } from '../../types/finance'
 import { CustomIcon } from '../common/CustomIcon';
 import { Text } from '../common/AppText';
 import { TouchableOpacity } from '../common/Touchable';
+
+// Carga segura de módulos nativos de voz/audio (evita crash si el APK aún no fue recompilado)
+let ExpoSpeechRecognitionModule: any = null;
+try {
+  const speechPkg = require('expo-speech-recognition');
+  ExpoSpeechRecognitionModule = speechPkg?.ExpoSpeechRecognitionModule || null;
+} catch {
+  ExpoSpeechRecognitionModule = null;
+}
+
+let ExpoAudio: any = null;
+try {
+  const avPkg = require('expo-av');
+  ExpoAudio = avPkg?.Audio || null;
+} catch {
+  ExpoAudio = null;
+}
+
+let ExpoFileSystem: any = null;
+try {
+  ExpoFileSystem = require('expo-file-system/legacy');
+} catch {
+  try {
+    ExpoFileSystem = require('expo-file-system');
+  } catch {
+    ExpoFileSystem = null;
+  }
+}
 
 interface VoiceAssistantOverlayProps {
   visible: boolean;
@@ -68,11 +95,11 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
   const transcriptRef = useRef('');
   const isSavingRef = useRef(false);
   const hasSavedRef = useRef(false);
-  const prevExternalHoldingRef = useRef(isExternalHolding);
+  const wasHoldingRef = useRef(false);
   const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const silenceDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recognitionRef = useRef<any>(null);
-  const hiddenInputRef = useRef<RNTextInput | null>(null);
+  const webRecognitionRef = useRef<any>(null);
+  const nativeSpeechSubRef = useRef<any>(null);
+  const audioRecordingRef = useRef<any>(null);
 
   const dotPulseAnim = useRef(new Animated.Value(1)).current;
   const waveAnims = useRef(
@@ -89,31 +116,113 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
       clearTimeout(autoCloseTimerRef.current);
       autoCloseTimerRef.current = null;
     }
-    if (silenceDebounceRef.current) {
-      clearTimeout(silenceDebounceRef.current);
-      silenceDebounceRef.current = null;
-    }
   }, []);
 
-  const stopSpeechRecognition = useCallback(() => {
-    if (recognitionRef.current) {
+  const stopAllCapture = useCallback(async (): Promise<{
+    finalTranscript: string;
+    audioBase64?: string;
+  }> => {
+    // 1. Detener Web Speech API
+    if (webRecognitionRef.current) {
       try {
-        recognitionRef.current.stop();
+        webRecognitionRef.current.stop();
       } catch {}
-      recognitionRef.current = null;
+      webRecognitionRef.current = null;
     }
+
+    // 2. Detener ExpoSpeechRecognition nativo
+    if (ExpoSpeechRecognitionModule) {
+      try {
+        ExpoSpeechRecognitionModule.stop();
+      } catch {}
+    }
+    if (nativeSpeechSubRef.current) {
+      try {
+        nativeSpeechSubRef.current.remove();
+      } catch {}
+      nativeSpeechSubRef.current = null;
+    }
+
+    // 3. Detener grabación de audio de respaldo (expo-av) y obtener base64 si existe
+    let audioBase64: string | undefined;
+    if (audioRecordingRef.current) {
+      try {
+        const rec = audioRecordingRef.current;
+        audioRecordingRef.current = null;
+        await rec.stopAndUnloadAsync();
+        const uri = rec.getURI();
+        if (uri && ExpoFileSystem?.readAsStringAsync) {
+          audioBase64 = await ExpoFileSystem.readAsStringAsync(uri, {
+            encoding: ExpoFileSystem.EncodingType?.Base64 || 'base64',
+          });
+        }
+      } catch {}
+    }
+
+    return {
+      finalTranscript: transcriptRef.current.trim(),
+      audioBase64,
+    };
   }, []);
 
-  const startSpeechRecognition = useCallback(() => {
+  const startAllCapture = useCallback(async () => {
     setIsListening(true);
 
-    // 1. Web Speech API (Chrome / Web / Android WebView)
+    // 1. Intentar ExpoSpeechRecognition nativo (transcripción en vivo en Android/iOS)
+    let startedNativeSpeech = false;
+    if (ExpoSpeechRecognitionModule && Platform.OS !== 'web') {
+      try {
+        const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        if (perm?.granted) {
+          if (nativeSpeechSubRef.current) {
+            try {
+              nativeSpeechSubRef.current.remove();
+            } catch {}
+          }
+          nativeSpeechSubRef.current = ExpoSpeechRecognitionModule.addListener(
+            'result',
+            (event: any) => {
+              const spoken = event?.results?.[0]?.transcript;
+              if (typeof spoken === 'string' && spoken.trim()) {
+                updateTranscript(spoken.trim());
+              }
+            }
+          );
+          ExpoSpeechRecognitionModule.start({
+            lang: 'es-CO',
+            interimResults: true,
+            continuous: true,
+          });
+          startedNativeSpeech = true;
+        }
+      } catch {
+        startedNativeSpeech = false;
+      }
+    }
+
+    // 2. Si no inició SpeechRecognizer nativo en móvil, iniciar grabación de audio (expo-av) para enviar directo a Gemini
+    if (!startedNativeSpeech && ExpoAudio && Platform.OS !== 'web') {
+      try {
+        const perm = await ExpoAudio.requestPermissionsAsync();
+        if (perm?.granted) {
+          await ExpoAudio.setAudioModeAsync({
+            allowsRecordingIOS: true,
+            playsInSilentModeIOS: true,
+          });
+          const { recording } = await ExpoAudio.Recording.createAsync(
+            ExpoAudio.RecordingOptionsPresets.HIGH_QUALITY
+          );
+          audioRecordingRef.current = recording;
+        }
+      } catch {}
+    }
+
+    // 3. En Web, usar Web Speech API
     if (typeof window !== 'undefined') {
       const SpeechRecognition =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
         try {
-          stopSpeechRecognition();
           const recognition = new SpeechRecognition();
           recognition.lang = 'es-CO';
           recognition.interimResults = true;
@@ -133,238 +242,233 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
           recognition.onend = () => {};
 
           recognition.start();
-          recognitionRef.current = recognition;
+          webRecognitionRef.current = recognition;
         } catch {}
       }
     }
+  }, [updateTranscript]);
 
-    // 2. Foco en input invisible para dictado de voz del sistema en Android / iOS
-    setTimeout(() => {
-      hiddenInputRef.current?.focus();
-    }, 80);
-  }, [stopSpeechRecognition, updateTranscript]);
+  // Ejecuta Gemini + Guardado Automático al soltar el botón
+  const handleReleaseAndAutoSave = useCallback(async () => {
+    if (isSavingRef.current || hasSavedRef.current) return;
 
-  // Ejecuta Gemini + Guardado Automático sin pedir confirmación manual
-  const processAndAutoSave = useCallback(
-    async (rawText?: string) => {
-      const cleanText = (rawText ?? transcriptRef.current).trim();
-      if (!cleanText || isSavingRef.current || hasSavedRef.current) {
+    setIsListening(false);
+    isSavingRef.current = true;
+    setIsSaving(true);
+
+    // Breve espera de 180ms para que el último fragmento de voz termine de llegar
+    await new Promise((r) => setTimeout(r, 180));
+    const { finalTranscript, audioBase64 } = await stopAllCapture();
+
+    // Si no se capturó ni voz ni audio al soltar, cerrar el overlay de inmediato (NUNCA quedarse pegado)
+    if (!finalTranscript && !audioBase64) {
+      isSavingRef.current = false;
+      setIsSaving(false);
+      onClose();
+      if (Platform.OS !== 'web' && !ExpoSpeechRecognitionModule && !ExpoAudio) {
+        showWarning(
+          'Actualización de APK Requerida',
+          'Para usar el micrófono en vivo en Android, instala el nuevo APK compilado con permiso de micrófono.'
+        );
+      }
+      return;
+    }
+
+    try {
+      const { data: extracted } = await extractTransactionWithGemini({
+        transcript: finalTranscript,
+        audioBase64,
+        audioMimeType: 'audio/mp4',
+        apiKey: geminiApiKey,
+        model: geminiModel,
+        accounts,
+        creditCards,
+        categories,
+      });
+
+      if (extracted.monto <= 0) {
+        isSavingRef.current = false;
+        setIsSaving(false);
+        onClose();
+        showWarning(
+          'Monto no detectado',
+          'Mantén presionado y menciona el monto, por ejemplo: "Compra de leche por 3.000".'
+        );
         return;
       }
 
-      if (silenceDebounceRef.current) {
-        clearTimeout(silenceDebounceRef.current);
-        silenceDebounceRef.current = null;
-      }
+      const nowIso = new Date().toISOString();
+      const txDate = extracted.fechaISO || nowIso.split('T')[0];
 
-      stopSpeechRecognition();
-      setIsListening(false);
-      isSavingRef.current = true;
-      setIsSaving(true);
-
-      try {
-        const { data: extracted } = await extractTransactionWithGemini({
-          transcript: cleanText,
-          apiKey: geminiApiKey,
-          model: geminiModel,
-          accounts,
-          creditCards,
-          categories,
-        });
-
-        if (extracted.monto <= 0) {
+      if (extracted.tipo === 'TARJETA') {
+        const targetCard =
+          creditCards.find((c) => c.id === extracted.tarjetaId) || creditCards[0];
+        if (!targetCard) {
           isSavingRef.current = false;
           setIsSaving(false);
-          setIsListening(true);
-          showWarning(
-            'Monto no detectado',
-            'Di el valor del movimiento, por ejemplo: "Compra de leche por 3.000".'
-          );
+          onClose();
+          showWarning('Tarjeta Requerida', 'Registra primero una tarjeta de crédito.');
           return;
         }
 
-        const nowIso = new Date().toISOString();
-        const txDate = extracted.fechaISO || nowIso.split('T')[0];
+        const installmentsTotal = Math.max(1, extracted.cuotas || 1);
+        const rate = installmentsTotal === 1 ? 0 : targetCard.interestRateMonthly || 0;
+        const monthlyQuota = calculateMonthlyQuota(
+          extracted.monto,
+          rate,
+          installmentsTotal
+        );
 
-        if (extracted.tipo === 'TARJETA') {
-          const targetCard =
-            creditCards.find((c) => c.id === extracted.tarjetaId) || creditCards[0];
-          if (!targetCard) {
-            isSavingRef.current = false;
-            setIsSaving(false);
-            showWarning('Tarjeta Requerida', 'Registra primero una tarjeta de crédito.');
-            onClose();
-            return;
-          }
+        const startDate = new Date(txDate + 'T12:00:00');
+        const purchaseId = `purch-${Date.now()}`;
+        const newPurchase: CardPurchase = {
+          id: purchaseId,
+          cardId: targetCard.id,
+          description: extracted.concepto,
+          categoryId:
+            extracted.categoriaId ||
+            categories.find((c) => c.type === 'expense')?.id ||
+            'cat-food',
+          amount: extracted.monto,
+          installmentsTotal,
+          installmentsPaid: 0,
+          monthlyInstallmentAmount: monthlyQuota,
+          interestRateMonthly: rate,
+          firstInstallmentDate: txDate,
+          status: 'active',
+          createdAt: txDate,
+        };
 
-          const installmentsTotal = Math.max(1, extracted.cuotas || 1);
-          const rate = installmentsTotal === 1 ? 0 : targetCard.interestRateMonthly || 0;
-          const monthlyQuota = calculateMonthlyQuota(
-            extracted.monto,
-            rate,
-            installmentsTotal
-          );
+        const schedule = generateAmortizationSchedule(
+          purchaseId,
+          extracted.monto,
+          rate,
+          installmentsTotal,
+          startDate,
+          0
+        );
 
-          const startDate = new Date(txDate + 'T12:00:00');
-          const purchaseId = `purch-${Date.now()}`;
-          const newPurchase: CardPurchase = {
-            id: purchaseId,
-            cardId: targetCard.id,
-            description: extracted.concepto,
-            categoryId:
-              extracted.categoriaId ||
-              categories.find((c) => c.type === 'expense')?.id ||
-              'cat-food',
-            amount: extracted.monto,
-            installmentsTotal,
-            installmentsPaid: 0,
-            monthlyInstallmentAmount: monthlyQuota,
-            interestRateMonthly: rate,
-            firstInstallmentDate: txDate,
-            status: 'active',
-            createdAt: txDate,
-          };
+        await addCardPurchase(newPurchase, schedule);
+        hasSavedRef.current = true;
+        setSavedRecord({ kind: 'purchase', id: purchaseId, data: extracted });
+      } else if (extracted.tipo === 'TRANSFERENCIA') {
+        const originId = extracted.cuentaOrigenId || accounts[0]?.id;
+        const destId =
+          extracted.cuentaDestinoId ||
+          accounts.find((a) => a.id !== originId)?.id ||
+          originId;
 
-          const schedule = generateAmortizationSchedule(
-            purchaseId,
-            extracted.monto,
-            rate,
-            installmentsTotal,
-            startDate,
-            0
-          );
+        if (!originId) {
+          isSavingRef.current = false;
+          setIsSaving(false);
+          onClose();
+          showWarning('Cuenta Requerida', 'Registra primero una cuenta bancaria o billetera.');
+          return;
+        }
 
-          await addCardPurchase(newPurchase, schedule);
-          hasSavedRef.current = true;
-          setSavedRecord({ kind: 'purchase', id: purchaseId, data: extracted });
-        } else if (extracted.tipo === 'TRANSFERENCIA') {
-          const originId = extracted.cuentaOrigenId || accounts[0]?.id;
-          const destId =
-            extracted.cuentaDestinoId ||
-            accounts.find((a) => a.id !== originId)?.id ||
-            originId;
+        const gmfAmount = extracted.aplica4x1000
+          ? Math.round(extracted.monto * 0.004)
+          : undefined;
 
-          if (!originId) {
-            isSavingRef.current = false;
-            setIsSaving(false);
-            showWarning('Cuenta Requerida', 'Registra primero una cuenta bancaria o billetera.');
-            onClose();
-            return;
-          }
+        const txId = `tx-${Date.now()}`;
+        const newTx: Transaction = {
+          id: txId,
+          accountId: originId,
+          toAccountId: destId,
+          type: 'transfer',
+          amount: extracted.monto,
+          categoryId: 'cat-financial',
+          description: extracted.concepto,
+          date: txDate,
+          gmfAmount,
+          createdAt: nowIso,
+        };
 
-          const gmfAmount = extracted.aplica4x1000
+        await addTransaction(newTx);
+        hasSavedRef.current = true;
+        setSavedRecord({ kind: 'transaction', id: txId, data: extracted });
+      } else {
+        const originId = extracted.cuentaOrigenId || accounts[0]?.id;
+        if (!originId) {
+          isSavingRef.current = false;
+          setIsSaving(false);
+          onClose();
+          showWarning('Cuenta Requerida', 'Registra primero una cuenta bancaria o billetera.');
+          return;
+        }
+
+        const txType: TransactionType =
+          extracted.tipo === 'INGRESO' ? 'income' : 'expense';
+        const gmfAmount =
+          txType === 'expense' && extracted.aplica4x1000
             ? Math.round(extracted.monto * 0.004)
             : undefined;
 
-          const txId = `tx-${Date.now()}`;
-          const newTx: Transaction = {
-            id: txId,
-            accountId: originId,
-            toAccountId: destId,
-            type: 'transfer',
-            amount: extracted.monto,
-            categoryId: 'cat-financial',
-            description: extracted.concepto,
-            date: txDate,
-            gmfAmount,
-            createdAt: nowIso,
-          };
+        const txId = `tx-${Date.now()}`;
+        const newTx: Transaction = {
+          id: txId,
+          accountId: originId,
+          type: txType,
+          amount: extracted.monto,
+          categoryId:
+            extracted.categoriaId ||
+            categories.find((c) => c.type === txType)?.id ||
+            'cat-food',
+          description: extracted.concepto,
+          date: txDate,
+          gmfAmount,
+          createdAt: nowIso,
+        };
 
-          await addTransaction(newTx);
-          hasSavedRef.current = true;
-          setSavedRecord({ kind: 'transaction', id: txId, data: extracted });
-        } else {
-          const originId = extracted.cuentaOrigenId || accounts[0]?.id;
-          if (!originId) {
-            isSavingRef.current = false;
-            setIsSaving(false);
-            showWarning('Cuenta Requerida', 'Registra primero una cuenta bancaria o billetera.');
-            onClose();
-            return;
-          }
-
-          const txType: TransactionType =
-            extracted.tipo === 'INGRESO' ? 'income' : 'expense';
-          const gmfAmount =
-            txType === 'expense' && extracted.aplica4x1000
-              ? Math.round(extracted.monto * 0.004)
-              : undefined;
-
-          const txId = `tx-${Date.now()}`;
-          const newTx: Transaction = {
-            id: txId,
-            accountId: originId,
-            type: txType,
-            amount: extracted.monto,
-            categoryId:
-              extracted.categoriaId ||
-              categories.find((c) => c.type === txType)?.id ||
-              'cat-food',
-            description: extracted.concepto,
-            date: txDate,
-            gmfAmount,
-            createdAt: nowIso,
-          };
-
-          await addTransaction(newTx);
-          hasSavedRef.current = true;
-          setSavedRecord({ kind: 'transaction', id: txId, data: extracted });
-        }
-
-        // Cerrar automáticamente después de 2.2 segundos
-        autoCloseTimerRef.current = setTimeout(() => {
-          onSavedSuccess?.();
-          onClose();
-        }, 2200);
-      } catch {
-        showError('Error', 'No fue posible guardar el movimiento por voz.');
-      } finally {
-        isSavingRef.current = false;
-        setIsSaving(false);
+        await addTransaction(newTx);
+        hasSavedRef.current = true;
+        setSavedRecord({ kind: 'transaction', id: txId, data: extracted });
       }
-    },
-    [
-      accounts,
-      addCardPurchase,
-      addTransaction,
-      categories,
-      creditCards,
-      geminiApiKey,
-      geminiModel,
-      onClose,
-      onSavedSuccess,
-      showError,
-      showWarning,
-      stopSpeechRecognition,
-    ]
-  );
 
-  // Detectar cuando el usuario SUELTA el botón central (+ / 🎙️) desde App.tsx
+      // Cerrar automáticamente después de 2.2 segundos
+      autoCloseTimerRef.current = setTimeout(() => {
+        onSavedSuccess?.();
+        onClose();
+      }, 2200);
+    } catch {
+      showError('Error', 'No fue posible guardar el movimiento por voz.');
+      onClose();
+    } finally {
+      isSavingRef.current = false;
+      setIsSaving(false);
+    }
+  }, [
+    accounts,
+    addCardPurchase,
+    addTransaction,
+    categories,
+    creditCards,
+    geminiApiKey,
+    geminiModel,
+    onClose,
+    onSavedSuccess,
+    showError,
+    showWarning,
+    stopAllCapture,
+  ]);
+
+  // Detectar cuando el usuario mantiene presionado y luego SUELTA el botón (+ o 🎙️)
   useEffect(() => {
-    if (prevExternalHoldingRef.current && !isExternalHolding && visible) {
-      if (transcriptRef.current.trim().length > 0) {
-        processAndAutoSave(transcriptRef.current);
-      }
+    if (!visible) {
+      wasHoldingRef.current = false;
+      return;
     }
-    prevExternalHoldingRef.current = isExternalHolding;
-  }, [isExternalHolding, visible, processAndAutoSave]);
 
-  // Si el texto entra por dictado de voz del sistema (Android), auto-guardar al terminar la frase
-  const handleSystemVoiceTranscriptChange = (text: string) => {
-    updateTranscript(text);
-    if (silenceDebounceRef.current) {
-      clearTimeout(silenceDebounceRef.current);
+    const currentlyHolding = isExternalHolding || isInternalHolding;
+    if (currentlyHolding) {
+      wasHoldingRef.current = true;
+    } else if (wasHoldingRef.current && !currentlyHolding) {
+      wasHoldingRef.current = false;
+      handleReleaseAndAutoSave();
     }
-    if (!isExternalHolding && !isInternalHolding && text.trim().length >= 4) {
-      silenceDebounceRef.current = setTimeout(() => {
-        if (!isExternalHolding && !isInternalHolding && transcriptRef.current.trim().length >= 4) {
-          processAndAutoSave(transcriptRef.current);
-        }
-      }, 1250);
-    }
-  };
+  }, [visible, isExternalHolding, isInternalHolding, handleReleaseAndAutoSave]);
 
-  // revertir movimiento recién creado ("Deshacer")
+  // Revertir movimiento recién creado ("Deshacer")
   const handleUndoSaved = async () => {
     if (!savedRecord) return;
     clearTimers();
@@ -386,7 +490,7 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
   useEffect(() => {
     if (!visible) {
       clearTimers();
-      stopSpeechRecognition();
+      stopAllCapture();
       return;
     }
 
@@ -397,19 +501,19 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
     hasSavedRef.current = false;
     setIsListening(true);
 
-    startSpeechRecognition();
+    startAllCapture();
 
     const dotLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(dotPulseAnim, {
           toValue: 0.3,
-          duration: 650,
+          duration: 600,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(dotPulseAnim, {
           toValue: 1,
-          duration: 650,
+          duration: 600,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
@@ -418,7 +522,7 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
     dotLoop.start();
 
     const barLoops = waveAnims.map((anim, idx) => {
-      const duration = 240 + (idx % 5) * 85;
+      const duration = 220 + (idx % 5) * 80;
       return Animated.loop(
         Animated.sequence([
           Animated.timing(anim, {
@@ -443,9 +547,17 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
       dotLoop.stop();
       barLoops.forEach((l) => l.stop());
       clearTimers();
-      stopSpeechRecognition();
+      stopAllCapture();
     };
-  }, [visible, clearTimers, dotPulseAnim, startSpeechRecognition, stopSpeechRecognition, updateTranscript, waveAnims]);
+  }, [
+    visible,
+    clearTimers,
+    dotPulseAnim,
+    startAllCapture,
+    stopAllCapture,
+    updateTranscript,
+    waveAnims,
+  ]);
 
   if (!visible) return null;
 
@@ -463,7 +575,10 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
   };
 
   return (
-    <View style={styles.rootOverlay} pointerEvents="box-none">
+    <View
+      style={styles.rootOverlay}
+      pointerEvents={isExternalHolding ? 'none' : 'auto'}
+    >
       <Pressable
         style={styles.backdropPressable}
         onPress={() => {
@@ -476,22 +591,6 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
           }
         }}
       >
-        {/* Input invisible (1x1px, opacidad 0) para capturar dictado por voz nativo del teclado Android sin mostrar ninguna caja */}
-        <RNTextInput
-          ref={hiddenInputRef}
-          style={styles.hiddenVoiceReceiver}
-          value={transcript}
-          onChangeText={handleSystemVoiceTranscriptChange}
-          onSubmitEditing={() => {
-            if (transcriptRef.current.trim().length > 0) {
-              processAndAutoSave(transcriptRef.current);
-            }
-          }}
-          autoFocus
-          caretHidden
-           underlineColorAndroid="transparent"
-        />
-
         {/* 1. Indicador Superior Minimalista y Centrado */}
         <View style={styles.topMinimalBar}>
           <View style={styles.topSpacer} />
@@ -514,7 +613,7 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
               {isSaving
                 ? 'Guardando movimiento...'
                 : savedRecord
-                ? 'Listo'
+                ? '¡Listo!'
                 : 'Escuchando...'}
             </Text>
           </View>
@@ -533,10 +632,7 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
         {/* 2. Zona Central: Transcripción Flotante Limpia O Tarjeta de Éxito */}
         <View style={styles.centerStage}>
           {!savedRecord ? (
-            <Pressable
-              style={styles.floatingTranscriptWrap}
-              onPress={() => hiddenInputRef.current?.focus()}
-            >
+            <View style={styles.floatingTranscriptWrap}>
               {transcript.trim().length > 0 ? (
                 <Text style={styles.floatingLiveTranscript}>
                   “{transcript}”
@@ -548,7 +644,7 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
                     : 'Mantén presionado y di tu gasto, ingreso o transferencia...'}
                 </Text>
               )}
-            </Pressable>
+            </View>
           ) : (
             /* 3. Tarjeta de Movimiento Registrado (Sin desbordamiento / No Overflow) */
             <Pressable
@@ -698,14 +794,11 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
             onPressIn={() => {
               if (!savedRecord && !isSaving) {
                 setIsInternalHolding(true);
-                startSpeechRecognition();
+                startAllCapture();
               }
             }}
             onPressOut={() => {
               setIsInternalHolding(false);
-              if (transcriptRef.current.trim().length > 0 && !savedRecord && !isSaving) {
-                processAndAutoSave(transcriptRef.current);
-              }
             }}
             style={({ pressed }) => [
               styles.micOrbButton,
@@ -746,14 +839,6 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'android' ? 48 : 56,
     paddingBottom: 34,
     paddingHorizontal: 20,
-  },
-  hiddenVoiceReceiver: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    opacity: 0,
-    top: 0,
-    left: 0,
   },
   topMinimalBar: {
     flexDirection: 'row',

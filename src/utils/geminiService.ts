@@ -248,13 +248,15 @@ export async function testGeminiConnection(
  */
 export async function extractTransactionWithGemini(params: {
   transcript: string;
+  audioBase64?: string;
+  audioMimeType?: string;
   apiKey: string;
   model: GeminiModelType;
   accounts: Account[];
   creditCards: CreditCard[];
   categories: Category[];
 }): Promise<{ data: GeminiExtractedTransaction; source: 'gemini' | 'local_fallback' }> {
-  const { transcript, apiKey, model, accounts, creditCards, categories } = params;
+  const { transcript, audioBase64, audioMimeType, apiKey, model, accounts, creditCards, categories } = params;
   const todayISO = getTodayISO();
   const yesterdayISO = getYesterdayISO();
 
@@ -313,15 +315,28 @@ REGLAS ESTRICTAS:
 10. "aplica4x1000": true si es GASTO o TRANSFERENCIA desde una cuenta que tenga cobra4x1000=true (o si el usuario lo pide explícitamente).
 11. "resumenHumano": frase corta, cálida y clara en español confirmando qué se va a registrar.`;
 
+      const userParts: any[] = [];
+      if (audioBase64) {
+        userParts.push({
+          text: `${systemPrompt}\n\nEscucha este comando de voz del usuario y extrae el JSON exacto:`,
+        });
+        userParts.push({
+          inlineData: {
+            mimeType: audioMimeType || 'audio/mp4',
+            data: audioBase64,
+          },
+        });
+      } else {
+        userParts.push({
+          text: `${systemPrompt}\n\nComando de voz del usuario: "${transcript.trim()}"`,
+        });
+      }
+
       const res = await callGeminiWithAutoFallback(trimmedKey, model, {
         contents: [
           {
             role: 'user',
-            parts: [
-              {
-                text: `${systemPrompt}\n\nComando de voz del usuario: "${transcript.trim()}"`,
-              },
-            ],
+            parts: userParts,
           },
         ],
         generationConfig: {

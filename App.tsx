@@ -185,9 +185,7 @@ function MainApp() {
                     }
                   }}
                   onPressOut={() => {
-                    if (isHoldingVoiceBtn) {
-                      setIsHoldingVoiceBtn(false);
-                    }
+                    setIsHoldingVoiceBtn(false);
                   }}
                   activeOpacity={0.8}
                 >
