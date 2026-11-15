@@ -10,6 +10,7 @@ import {
 import { useFinancial } from '../context/FinancialContext';
 import { useAlert } from '../context/AlertContext';
 import { useAppTheme } from '../context/ThemeContext';
+import { useAI } from '../context/AIContext';
 import { NotificationService } from '../utils/notificationService';
 import { Layout, alpha } from '../components/common/Theme';
 import { CustomIcon } from '../components/common/CustomIcon';
@@ -30,6 +31,13 @@ export const SettingsScreen: React.FC = () => {
   const { currency, setCurrencyPreference, loadDemoData, resetDatabase, creditCards } = useFinancial();
   const { showSuccess, showWarning, showConfirm } = useAlert();
   const { mode, setMode, colors } = useAppTheme();
+  const {
+    geminiApiKey,
+    geminiModel,
+    voiceHoldEnabled,
+    autoCategorizeEnabled,
+    openAISettingsModal,
+  } = useAI();
   const [manageCatsVisible, setManageCatsVisible] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const appInfo = UpdateService.getAppInfo();
@@ -117,6 +125,76 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.header}>
           <Text style={[styles.tag, { color: colors.primaryLight }]}>CONFIGURACIÓN</Text>
           <Text style={[styles.title, { color: colors.textPrimary }]}>Ajustes & Opciones</Text>
+        </View>
+
+        {/* Inteligencia Artificial & APIs */}
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.surfaceCard,
+              borderColor: alpha(colors.primary, 0.45),
+              borderWidth: 1.5,
+            },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <CustomIcon name="Sparkles" size={18} color={colors.success} />
+              <Text style={[styles.cardTitle, { color: colors.textPrimary, marginBottom: 0 }]}>
+                Inteligencia Artificial & APIs
+              </Text>
+            </View>
+            <View
+              style={{
+                backgroundColor: geminiApiKey
+                  ? alpha(colors.success, 0.16)
+                  : alpha(colors.warning, 0.16),
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 8,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: '700',
+                  color: geminiApiKey ? colors.success : colors.warning,
+                }}
+              >
+                {geminiApiKey ? 'Gemini Activo' : 'Modo Local'}
+              </Text>
+            </View>
+          </View>
+          <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
+            Configura tu API Key de Google AI Studio (Gemini), modelo de velocidad ({geminiModel}), Google Maps y dictado por voz al mantener presionado (+).
+          </Text>
+
+          <TouchableOpacity
+            style={[
+              styles.actionRow,
+              {
+                backgroundColor: alpha(colors.primary, 0.14),
+                borderColor: alpha(colors.primary, 0.35),
+                borderWidth: 1,
+                marginBottom: 0,
+              },
+            ]}
+            onPress={openAISettingsModal}
+          >
+            <View style={[styles.actionIconBox, { backgroundColor: colors.primary }]}>
+              <CustomIcon name="Sparkles" size={18} color="#FFFFFF" />
+            </View>
+            <View style={styles.actionTextBox}>
+              <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>
+                Configuración de IA & Integraciones
+              </Text>
+              <Text style={[styles.actionSub, { color: colors.textSecondary }]}>
+                Voz (+): {voiceHoldEnabled ? 'Activo' : 'Inactivo'} • Autocategorizar: {autoCategorizeEnabled ? 'Activo' : 'Inactivo'}
+              </Text>
+            </View>
+            <CustomIcon name="ChevronRight" size={18} color={colors.primaryLight} />
+          </TouchableOpacity>
         </View>
 
         {/* Apariencia (Tema Claro Cálido / Oscuro Alto Contraste) */}

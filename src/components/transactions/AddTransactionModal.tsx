@@ -20,6 +20,12 @@ import { Text, TextInput } from '../common/AppText';
 import { TouchableOpacity } from '../common/Touchable';
 import { ParsedBankMessage } from '../../utils/bankNotificationParser';
 import { predictCategory } from '../../utils/aiCategorizer';
+import { useAI } from '../../context/AIContext';
+import {
+  GeminiExtractedTransaction,
+  predictCategoryWithGemini,
+} from '../../utils/geminiService';
+import { VoiceAssistantOverlay } from './VoiceAssistantOverlay';
 
 interface AddTransactionModalProps {
   visible: boolean;
@@ -27,6 +33,7 @@ interface AddTransactionModalProps {
   defaultType?: 'expense' | 'income' | 'card_purchase' | 'transfer';
   defaultCardId?: string | null;
   prefillData?: Partial<ParsedBankMessage> | null;
+  aiExtractedData?: GeminiExtractedTransaction | null;
 }
 
 const getTodayStr = () => new Date().toISOString().split('T')[0];
@@ -67,6 +74,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   defaultType = 'expense',
   defaultCardId,
   prefillData,
+  aiExtractedData,
 }) => {
   const {
     accounts,
@@ -77,6 +85,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     currency,
   } = useFinancial();
   const { showSuccess, showWarning, showError } = useAlert();
+  const { autoCategorizeEnabled, geminiApiKey, geminiModel } = useAI();
+  const [voiceOverlayVisible, setVoiceOverlayVisible] = useState(false);
+  const aiCategorizeTimerRef = useRef<any>(null);
 
   const [activeTab, setActiveTab] = useState<'expense' | 'income' | 'card_purchase' | 'transfer'>(defaultType);
 
@@ -153,6 +164,50 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       }
     }
   }, [visible, defaultType, defaultCardId, creditCards]);
+
+  const applyAIExtractedTransaction = (extracted: GeminiExtractedTransaction) => {
+    const mappedTab =
+      extracted.tipo === 'TARJETA'
+        ? 'card_purchase'
+        : extracted.tipo === 'INGRESO'
+        ? 'income'
+        : extracted.tipo === 'TRANSFERENCIA'
+        ? 'transfer'
+        : 'expense';
+
+    setActiveTab(mappedTab);
+    if (extracted.monto > 0) {
+      setAmount(formatInputNumber(extracted.monto.toString()));
+    }
+    if (extracted.concepto) {
+      setDescription(extracted.concepto);
+    }
+    if (extracted.fechaISO) {
+      setSelectedDate(extracted.fechaISO);
+    }
+    if (extracted.cuentaOrigenId) {
+      setSelectedAccountId(extracted.cuentaOrigenId);
+    }
+    if (extracted.cuentaDestinoId) {
+      setSelectedToAccountId(extracted.cuentaDestinoId);
+    }
+    if (extracted.tarjetaId) {
+      setSelectedCardId(extracted.tarjetaId);
+    }
+    if (extracted.cuotas > 0) {
+      setInstallments(extracted.cuotas.toString());
+    }
+    if (extracted.categoriaId) {
+      setSelectedCategoryId(extracted.categoriaId);
+    }
+    setApplyGmf(!!extracted.aplica4x1000);
+  };
+
+  useEffect(() => {
+    if (visible && aiExtractedData) {
+      applyAIExtractedTransaction(aiExtractedData);
+    }
+  }, [visible, aiExtractedData]);
 
   // Auto-llenado si viene de detección de notificación bancaria
   useEffect(() => {
@@ -381,6 +436,19 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           onPress={onClose}
         />
         <View style={styles.modalContainer}>
+          {/* Fila Superior: Título + Botón Rápido "🎙️ Dictar con IA" */}
+          <View style={styles.topDictateRow}>
+            <Text style={styles.modalTopTitle}>Nuevo Movimiento</Text>
+            <TouchableOpacity
+              style={styles.dictateAiBtn}
+              onPress={() => setVoiceOverlayVisible(true)}
+            >
+              <CustomIcon name="Mic" size={15} color="#34D399" />
+              <Text style={styles.dictateAiBtnText}>Dictar con IA</Text>
+              <CustomIcon name="Sparkles" size={13} color="#818CF8" />
+            </TouchableOpacity>
+          </View>
+
           {/* 1. Selector Superior Animado con Píldora Deslizante */}
           <View
             style={styles.tabsContainer}
@@ -475,9 +543,27 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               value={description}
               onChangeText={(text) => {
                 setDescription(text);
-                const predicted = predictCategory(text, categories, activeTab === 'income' ? 'income' : 'expense');
+                if (!autoCategorizeEnabled) return;
+                const catType = activeTab === 'income' ? 'income' : 'expense';
+                const predicted = predictCategory(text, categories, catType);
                 if (predicted) {
                   setSelectedCategoryId(predicted.id);
+                } else if (geminiApiKey && text.trim().length >= 4) {
+                  if (aiCategorizeTimerRef.current) {
+                    clearTimeout(aiCategorizeTimerRef.current);
+                  }
+                  aiCategorizeTimerRef.current = setTimeout(async () => {
+                    const aiCatId = await predictCategoryWithGemini({
+                      concept: text,
+                      type: catType,
+                      categories,
+                      apiKey: geminiApiKey,
+                      model: geminiModel,
+                    });
+                    if (aiCatId) {
+                      setSelectedCategoryId(aiCatId);
+                    }
+                  }, 420);
                 }
               }}
             />
@@ -1047,6 +1133,16 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           </ScrollView>
         </View>
       </View>
+
+      {/* Asistente de Voz Futurista integrado en el Modal */}
+      <VoiceAssistantOverlay
+        visible={voiceOverlayVisible}
+        onClose={() => setVoiceOverlayVisible(false)}
+        onReviewInForm={(extracted) => {
+          setVoiceOverlayVisible(false);
+          applyAIExtractedTransaction(extracted);
+        }}
+      />
     </Modal>
   );
 };
@@ -1071,6 +1167,33 @@ const styles = StyleSheet.create({
     paddingBottom: 42,
     maxHeight: '92%',
     marginBottom: 0,
+  },
+  topDictateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalTopTitle: {
+    color: '#F8FAFC',
+    fontSize: 17,
+    fontWeight: 'bold',
+  },
+  dictateAiBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.45)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  dictateAiBtnText: {
+    color: '#34D399',
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   tabsContainer: {
     position: 'relative',

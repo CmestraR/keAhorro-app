@@ -10,15 +10,19 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { FinancialProvider, useFinancial } from './src/context/FinancialContext';
 import { AlertProvider, useAlert } from './src/context/AlertContext';
 import { ThemeProvider, useAppTheme } from './src/context/ThemeContext';
+import { AIProvider, useAI } from './src/context/AIContext';
 import { NotificationService } from './src/utils/notificationService';
 import { UpdateService } from './src/utils/updateService';
 import { loadAppFonts } from './src/utils/fonts';
+import { GeminiExtractedTransaction } from './src/utils/geminiService';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { CardsScreen } from './src/screens/CardsScreen';
 import { AccountsScreen } from './src/screens/AccountsScreen';
 import { TransactionsScreen } from './src/screens/TransactionsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { AddTransactionModal } from './src/components/transactions/AddTransactionModal';
+import { VoiceAssistantOverlay } from './src/components/transactions/VoiceAssistantOverlay';
+import { AISettingsModal } from './src/components/settings/AISettingsModal';
 import { CustomIcon } from './src/components/common/CustomIcon';
 import { Text } from './src/components/common/AppText';
 import { TouchableOpacity } from './src/components/common/Touchable';
@@ -28,10 +32,13 @@ function MainApp() {
   const { isLoading, creditCards } = useFinancial();
   const { showConfirm, showSuccess } = useAlert();
   const { colors, isDark } = useAppTheme();
+  const { voiceHoldEnabled } = useAI();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'accounts' | 'transactions' | 'settings'>('dashboard');
   const [filterAccountId, setFilterAccountId] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isVoiceOverlayOpen, setIsVoiceOverlayOpen] = useState(false);
+  const [aiExtractedForModal, setAiExtractedForModal] = useState<GeminiExtractedTransaction | null>(null);
 
   useEffect(() => {
     NotificationService.init();
@@ -153,7 +160,19 @@ function MainApp() {
                 <TouchableOpacity
                   key={item.id}
                   style={styles.centerNavBtn}
-                  onPress={() => setIsAddModalOpen(true)}
+                  onPress={() => {
+                    setAiExtractedForModal(null);
+                    setIsAddModalOpen(true);
+                  }}
+                  delayLongPress={300}
+                  onLongPress={() => {
+                    if (voiceHoldEnabled) {
+                      setIsVoiceOverlayOpen(true);
+                    } else {
+                      setAiExtractedForModal(null);
+                      setIsAddModalOpen(true);
+                    }
+                  }}
                   activeOpacity={0.8}
                 >
                   <View
@@ -167,6 +186,16 @@ function MainApp() {
                     ]}
                   >
                     <CustomIcon name="Plus" size={24} color="#FFFFFF" />
+                    {voiceHoldEnabled && (
+                      <View
+                        style={[
+                          styles.voiceBadgeDot,
+                          { backgroundColor: '#6366F1', borderColor: colors.background },
+                        ]}
+                      >
+                        <CustomIcon name="Mic" size={9} color="#FFFFFF" />
+                      </View>
+                    )}
                   </View>
                   <Text style={[styles.centerNavLabel, { color: colors.successLight }]}>
                     {item.label}
@@ -217,8 +246,26 @@ function MainApp() {
       {/* Modal Global de Transacción Rápida */}
       <AddTransactionModal
         visible={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        aiExtractedData={aiExtractedForModal}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setAiExtractedForModal(null);
+        }}
       />
+
+      {/* Overlay Futurista de Dictado por Voz al mantener presionado (+) */}
+      <VoiceAssistantOverlay
+        visible={isVoiceOverlayOpen}
+        onClose={() => setIsVoiceOverlayOpen(false)}
+        onReviewInForm={(extracted) => {
+          setIsVoiceOverlayOpen(false);
+          setAiExtractedForModal(extracted);
+          setIsAddModalOpen(true);
+        }}
+      />
+
+      {/* Panel de Configuración de IA & Integraciones */}
+      <AISettingsModal />
     </View>
   );
 }
@@ -236,9 +283,11 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AlertProvider>
-          <FinancialProvider>
-            <MainApp />
-          </FinancialProvider>
+          <AIProvider>
+            <FinancialProvider>
+              <MainApp />
+            </FinancialProvider>
+          </AIProvider>
         </AlertProvider>
       </ThemeProvider>
     </SafeAreaProvider>
@@ -313,6 +362,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.45,
     shadowRadius: 8,
     borderWidth: 3,
+  },
+  voiceBadgeDot: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   centerNavLabel: {
     fontSize: 13,
