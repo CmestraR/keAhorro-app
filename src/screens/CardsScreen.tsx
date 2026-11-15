@@ -3,6 +3,8 @@ import {
   View,
   StyleSheet,
   ScrollView,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { useFinancial } from '../context/FinancialContext';
 import { useAlert } from '../context/AlertContext';
@@ -58,6 +60,8 @@ export const CardsScreen: React.FC = () => {
   const [selectedPurchaseCard, setSelectedPurchaseCard] = useState<CreditCard | null>(null);
 
   const [addPurchaseModalVisible, setAddPurchaseModalVisible] = useState(false);
+  const [selectedCardForPurchase, setSelectedCardForPurchase] = useState<CreditCard | null>(null);
+  const [contextMenuCard, setContextMenuCard] = useState<CreditCard | null>(null);
   const [viewMode, setViewMode] = useState<'wallet' | 'list'>('wallet');
 
   const totalCreditLimit = creditCards.reduce((sum, c) => sum + c.creditLimit, 0);
@@ -132,6 +136,11 @@ export const CardsScreen: React.FC = () => {
     setSelectedPurchase(purchase);
     setSelectedPurchaseCard(card);
     setAmortizationModalVisible(true);
+  };
+
+  const handleOpenAddPurchase = (card?: CreditCard) => {
+    setSelectedCardForPurchase(card || creditCards[0] || null);
+    setAddPurchaseModalVisible(true);
   };
 
   return (
@@ -267,19 +276,6 @@ export const CardsScreen: React.FC = () => {
               </View>
             )}
           </View>
-
-          <TouchableOpacity
-            style={[
-              styles.newPurchaseQuick,
-              { backgroundColor: alpha(colors.primary, 0.15) },
-            ]}
-            onPress={() => setAddPurchaseModalVisible(true)}
-          >
-            <CustomIcon name="ShoppingBag" size={14} color={colors.primaryLight} />
-            <Text style={[styles.newPurchaseQuickText, { color: colors.primaryLight }]}>
-              + Compra
-            </Text>
-          </TouchableOpacity>
         </View>
 
         {creditCards.length === 0 ? (
@@ -316,7 +312,7 @@ export const CardsScreen: React.FC = () => {
             onOpenReconcile={handleOpenReconcile}
             onOpenManualStatement={handleOpenManualStatement}
             onOpenAmortization={handleOpenAmortization}
-            onOpenAddPurchase={() => setAddPurchaseModalVisible(true)}
+            onOpenAddPurchase={(card) => handleOpenAddPurchase(card)}
             onOpenCreateCard={handleOpenCreateCard}
           />
         ) : (
@@ -338,7 +334,7 @@ export const CardsScreen: React.FC = () => {
 
             return (
               <View key={card.id} style={styles.cardWrapper}>
-                {/* Header superior de la tarjeta con emisor y acciones */}
+                {/* Header superior de la tarjeta con estado y menú contextual (⋮) */}
                 <View style={styles.cardHeaderActions}>
                   <View style={[styles.statusBadgePill, { backgroundColor: statusBadge.bg }]}>
                     <Text style={[styles.statusBadgeText, { color: statusBadge.color }]}>
@@ -346,94 +342,53 @@ export const CardsScreen: React.FC = () => {
                     </Text>
                   </View>
 
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity
-                      style={[
-                        styles.editCardBtn,
-                        { backgroundColor: colors.surfaceCard, borderColor: colors.border },
-                      ]}
-                      onPress={() => handleOpenEditCard(card)}
-                    >
-                      <CustomIcon name="Edit3" size={14} color={colors.textSecondary} />
-                      <Text style={[styles.editCardBtnText, { color: colors.textSecondary }]}>
-                        Editar
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.deleteCardBtn,
-                        {
-                          backgroundColor: colors.dangerBg,
-                          borderColor: alpha(colors.danger, 0.3),
-                        },
-                      ]}
-                      onPress={() => handleDeleteCard(card)}
-                    >
-                      <CustomIcon name="Trash2" size={14} color={colors.danger} />
-                      <Text style={[styles.deleteCardBtnText, { color: colors.danger }]}>
-                        Eliminar
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.contextMenuTriggerBtn,
+                      { backgroundColor: colors.surfaceCard, borderColor: colors.borderLight },
+                    ]}
+                    onPress={() => setContextMenuCard(card)}
+                    accessibilityLabel="Más opciones de tarjeta"
+                  >
+                    <CustomIcon name="MoreVertical" size={20} color={colors.textPrimary} />
+                  </TouchableOpacity>
                 </View>
 
                 {/* Componente Visual de Tarjeta */}
                 <CreditCardVisual
                   card={card}
                   statement={stmt}
-                  onViewStatement={() => handleOpenStatement(card)}
-                  onAddPurchase={() => setAddPurchaseModalVisible(true)}
-                  onPayCard={() => handleOpenPay(card)}
+                  onPress={() => handleOpenStatement(card)}
+                  compact
                 />
 
-                {/* Barra de Acciones de Tarjeta */}
+                {/* Dos Únicas Acciones Primarias (min-height: 48px) */}
                 <View style={styles.cardActionsBar}>
+                  <TouchableOpacity
+                    style={[
+                      styles.cardActionBtn,
+                      { backgroundColor: colors.success, borderColor: colors.success },
+                    ]}
+                    onPress={() => handleOpenAddPurchase(card)}
+                    activeOpacity={0.8}
+                  >
+                    <CustomIcon name="Plus" size={18} color="#FFFFFF" />
+                    <Text style={styles.cardActionBtnTextPrimary} numberOfLines={1}>
+                      Registrar Compra
+                    </Text>
+                  </TouchableOpacity>
+
                   <TouchableOpacity
                     style={[
                       styles.cardActionBtn,
                       { backgroundColor: colors.primary, borderColor: colors.primary },
                     ]}
                     onPress={() => handleOpenPay(card)}
-                    activeOpacity={0.7}
+                    activeOpacity={0.8}
                   >
-                    <CustomIcon name="CreditCard" size={14} color="#FFFFFF" />
+                    <CustomIcon name="CreditCard" size={18} color="#FFFFFF" />
                     <Text style={styles.cardActionBtnTextPrimary} numberOfLines={1}>
-                      Pagar
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.cardActionBtn,
-                      { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
-                    ]}
-                    onPress={() => handleOpenStatement(card)}
-                    activeOpacity={0.7}
-                  >
-                    <CustomIcon name="FileText" size={14} color={colors.textSecondary} />
-                    <Text
-                      style={[styles.cardActionBtnText, { color: colors.textSecondary }]}
-                      numberOfLines={1}
-                    >
-                      Extracto
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.cardActionBtn,
-                      { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
-                    ]}
-                    onPress={() => handleOpenReconcile(card)}
-                    activeOpacity={0.7}
-                  >
-                    <CustomIcon name="ShieldCheck" size={14} color={colors.textSecondary} />
-                    <Text
-                      style={[styles.cardActionBtnText, { color: colors.textSecondary }]}
-                      numberOfLines={1}
-                    >
-                      Conciliar
+                      Abonar / Pagar
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -549,8 +504,163 @@ export const CardsScreen: React.FC = () => {
       <AddTransactionModal
         visible={addPurchaseModalVisible}
         defaultType="card_purchase"
-        onClose={() => setAddPurchaseModalVisible(false)}
+        defaultCardId={selectedCardForPurchase?.id}
+        onClose={() => {
+          setAddPurchaseModalVisible(false);
+          setSelectedCardForPurchase(null);
+        }}
       />
+
+      {/* Menú Contextual (⋮) en modo Lista */}
+      <Modal
+        visible={!!contextMenuCard}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setContextMenuCard(null)}
+      >
+        <Pressable
+          style={styles.contextMenuBackdrop}
+          onPress={() => setContextMenuCard(null)}
+        >
+          {contextMenuCard && (
+            <Pressable
+              style={[
+                styles.contextMenuSheet,
+                { backgroundColor: colors.surfaceCard, borderColor: colors.borderLight },
+              ]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={[styles.contextMenuHeader, { borderBottomColor: colors.divider }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contextMenuCardBank, { color: colors.textSecondary }]}>
+                    {contextMenuCard.bankName.toUpperCase()} •••• {contextMenuCard.lastFourDigits || '0000'}
+                  </Text>
+                  <Text style={[styles.contextMenuCardName, { color: colors.textPrimary }]}>
+                    {contextMenuCard.name}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.contextMenuCloseBtn, { backgroundColor: colors.surfaceElevated }]}
+                  onPress={() => setContextMenuCard(null)}
+                >
+                  <CustomIcon name="X" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => {
+                  const target = contextMenuCard;
+                  setContextMenuCard(null);
+                  handleOpenStatement(target);
+                }}
+              >
+                <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.primary, 0.15) }]}>
+                  <CustomIcon name="FileText" size={18} color={colors.primaryLight} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
+                    Ver Extracto y Proyección
+                  </Text>
+                  <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                    Detalle al corte, cargos y calendario de pagos
+                  </Text>
+                </View>
+                <CustomIcon name="ChevronRight" size={16} color={colors.textMuted} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => {
+                  const target = contextMenuCard;
+                  setContextMenuCard(null);
+                  handleOpenReconcile(target);
+                }}
+              >
+                <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.success, 0.15) }]}>
+                  <CustomIcon name="ShieldCheck" size={18} color={colors.success} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
+                    Conciliar Saldo
+                  </Text>
+                  <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                    Ajusta el cupo disponible con el de tu banco
+                  </Text>
+                </View>
+                <CustomIcon name="ChevronRight" size={16} color={colors.textMuted} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => {
+                  const target = contextMenuCard;
+                  setContextMenuCard(null);
+                  handleOpenManualStatement(target, 'opening_balance');
+                }}
+              >
+                <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.warning, 0.15) }]}>
+                  <CustomIcon name="SlidersHorizontal" size={18} color={colors.warning} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
+                    Saldo Inicial / Apertura
+                  </Text>
+                  <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                    Configura deuda previa o extracto manual
+                  </Text>
+                </View>
+                <CustomIcon name="ChevronRight" size={16} color={colors.textMuted} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => {
+                  const target = contextMenuCard;
+                  setContextMenuCard(null);
+                  handleOpenEditCard(target);
+                }}
+              >
+                <View style={[styles.contextMenuIconWrap, { backgroundColor: colors.surfaceElevated }]}>
+                  <CustomIcon name="Edit3" size={18} color={colors.textPrimary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
+                    Editar Tarjeta
+                  </Text>
+                  <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                    Cupo total, día de corte, pago y tasa E.M.
+                  </Text>
+                </View>
+                <CustomIcon name="ChevronRight" size={16} color={colors.textMuted} />
+              </TouchableOpacity>
+
+              <View style={[styles.contextMenuDivider, { backgroundColor: colors.divider }]} />
+
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => {
+                  const target = contextMenuCard;
+                  setContextMenuCard(null);
+                  handleDeleteCard(target);
+                }}
+              >
+                <View style={[styles.contextMenuIconWrap, { backgroundColor: colors.dangerBg }]}>
+                  <CustomIcon name="Trash2" size={18} color={colors.danger} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contextMenuItemTitle, { color: colors.danger }]}>
+                    Eliminar Tarjeta
+                  </Text>
+                  <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                    Eliminar o archivar tarjeta de crédito
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </Pressable>
+          )}
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -706,57 +816,109 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  editCardBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+  contextMenuTriggerBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     borderWidth: 1,
-  },
-  editCardBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  deleteCardBtn: {
-    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  deleteCardBtnText: {
-    fontSize: 13,
-    fontWeight: 'bold',
   },
   cardActionsBar: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-    marginBottom: 10,
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 14,
   },
   cardActionBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    borderRadius: 10,
-    minHeight: Layout.minTouchHeight,
-    paddingHorizontal: 6,
+    gap: 8,
+    borderRadius: 14,
+    minHeight: 48,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     borderWidth: 1,
   },
   cardActionBtnText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
   },
   cardActionBtnTextPrimary: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
+  },
+  contextMenuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  contextMenuSheet: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 8,
+    overflow: 'hidden',
+  },
+  contextMenuHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    marginBottom: 4,
+  },
+  contextMenuCardBank: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  contextMenuCardName: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  contextMenuCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contextMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    minHeight: 56,
+    gap: 12,
+  },
+  contextMenuIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contextMenuItemTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  contextMenuItemSub: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  contextMenuDivider: {
+    height: 1,
+    marginVertical: 4,
+    marginHorizontal: 18,
   },
   cardPurchasesList: {
     borderRadius: 14,

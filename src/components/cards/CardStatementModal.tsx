@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,6 +7,8 @@ import {
   Alert,
   Dimensions,
   Platform,
+  Animated,
+  Easing,
 } from 'react-native';
 import { CreditCard, CardStatementSummary } from '../../types/finance';
 import { useFinancial } from '../../context/FinancialContext';
@@ -28,6 +30,32 @@ const MONTH_NAMES_FULL = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
 ];
+
+const AnimatedVerticalBar: React.FC<{
+  targetHeight: number;
+  visible: boolean;
+  delayMs?: number;
+  style?: any;
+}> = ({ targetHeight, visible, delayMs = 0, style }) => {
+  const heightAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      heightAnim.setValue(0);
+      Animated.timing(heightAnim, {
+        toValue: targetHeight,
+        duration: 500,
+        delay: delayMs,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    } else {
+      heightAnim.setValue(0);
+    }
+  }, [visible, targetHeight, delayMs]);
+
+  return <Animated.View style={[style, { height: heightAnim }]} />;
+};
 
 export const CardStatementModal: React.FC<CardStatementModalProps> = ({
   visible,
@@ -243,10 +271,12 @@ export const CardStatementModal: React.FC<CardStatementModalProps> = ({
                       activeOpacity={0.7}
                     >
                       <View style={styles.barSlot}>
-                        <View
+                        <AnimatedVerticalBar
+                          targetHeight={barHeight}
+                          visible={visible}
+                          delayMs={idx * 45}
                           style={[
                             styles.barVisual,
-                            { height: barHeight },
                             isSelected && styles.barVisualSelected,
                             m.totalToPay === 0 && styles.barVisualZero,
                           ]}
@@ -277,9 +307,9 @@ export const CardStatementModal: React.FC<CardStatementModalProps> = ({
               <Text style={styles.threeBalancesHeader}>Estado Contable de Deuda</Text>
               
               <View style={styles.balanceRow}>
-                <View>
+                <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.balanceLabel}>1. Deuda Total Actual</Text>
-                  <Text style={styles.balanceSub}>Capital ($ {formatCurrency(statement.principalDebt || statement.usedCredit, currency)}) + Cargos ($ {formatCurrency(statement.nonPrincipalDebt || 0, currency)})</Text>
+                  <Text style={styles.balanceSub}>Capital ({formatCurrency(statement.principalDebt || statement.usedCredit, currency)}) + Cargos ({formatCurrency(statement.nonPrincipalDebt || 0, currency)})</Text>
                 </View>
                 <Text style={styles.balanceValueRed}>{formatCurrency(statement.totalCurrentDebt || statement.usedCredit, currency)}</Text>
               </View>
@@ -287,9 +317,9 @@ export const CardStatementModal: React.FC<CardStatementModalProps> = ({
               <View style={styles.divider} />
 
               <View style={styles.balanceRow}>
-                <View>
+                <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.balanceLabel}>2. Saldo Facturado Pendiente</Text>
-                  <Text style={styles.balanceSub}>Extracto al corte ({statement.statementStatus || 'open'})</Text>
+                  <Text style={styles.balanceSub}>Facturado al corte ({!statement.statementStatus || statement.statementStatus === 'open' ? 'Abierto' : 'Cerrado'})</Text>
                 </View>
                 <Text style={styles.balanceValueAmber}>{formatCurrency(statement.billedStatementDebtRemaining, currency)}</Text>
               </View>

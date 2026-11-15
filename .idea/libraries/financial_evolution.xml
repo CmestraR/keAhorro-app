@@ -1,0 +1,12 @@
+<component name="libraryTable">
+  <library name="financial-evolution">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/docs/financial-evolution/PHASE_1_3_FINAL_REVIEW.zip!/" />
+      <root url="jar://$PROJECT_DIR$/docs/financial-evolution/PHASE_1_FINAL_REVIEW_PACKAGE.zip!/" />
+      <root url="jar://$PROJECT_DIR$/docs/financial-evolution/02-credit-cards.zip!/" />
+      <root url="jar://$PROJECT_DIR$/docs/financial-evolution/PHASE_1_2_FINAL_REVIEW.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

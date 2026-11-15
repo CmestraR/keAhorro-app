@@ -6,6 +6,8 @@ import {
   Easing,
   Dimensions,
   PanResponder,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CreditCard, CardStatementSummary, CardPurchase } from '../../types/finance';
@@ -244,7 +246,7 @@ interface AnimatedWalletStackProps {
   onOpenReconcile: (card: CreditCard) => void;
   onOpenManualStatement: (card: CreditCard, mode?: 'opening_balance' | 'statement') => void;
   onOpenAmortization: (purchase: CardPurchase) => void;
-  onOpenAddPurchase: () => void;
+  onOpenAddPurchase: (card: CreditCard) => void;
   onOpenCreateCard: () => void;
 }
 
@@ -272,6 +274,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
     creditCards.map((c) => c.id)
   );
   const [balanceMode, setBalanceMode] = useState<'available' | 'debt' | 'billed'>('available');
+  const [contextMenuVisible, setContextMenuVisible] = useState(false);
 
   // Sincronizar cuando se agregan o eliminan tarjetas
   useEffect(() => {
@@ -455,7 +458,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
         ]}
       />
 
-      {/* Barra superior de la tarjeta activa: Estado + Indicador de posición + Editar / Eliminar */}
+      {/* Barra superior de la tarjeta activa: Estado + Indicador de posición + Menú Contextual (⋮) */}
       <View style={styles.activeTopBar}>
         <View style={styles.leftBadgesRow}>
           <View style={[styles.statusBadgePill, { backgroundColor: statusBadge.bg }]}>
@@ -470,7 +473,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
                 { backgroundColor: colors.surfaceCard, borderColor: colors.border },
               ]}
             >
-              <CustomIcon name="Layers" size={12} color={colors.textMuted} />
+              <CustomIcon name="Layers" size={13} color={colors.textMuted} />
               <Text style={[styles.cardCounterText, { color: colors.textSecondary }]}>
                 1 de {creditCards.length}
               </Text>
@@ -478,32 +481,16 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
           )}
         </View>
 
-        <View style={styles.topActionsGroup}>
-          <TouchableOpacity
-            style={[
-              styles.iconBtnSmall,
-              { backgroundColor: colors.surfaceCard, borderColor: colors.border },
-            ]}
-            onPress={() => onEditCard(activeCard)}
-          >
-            <CustomIcon name="Edit3" size={13} color={colors.textSecondary} />
-            <Text style={[styles.iconBtnSmallText, { color: colors.textSecondary }]}>Editar</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.iconBtnSmall,
-              {
-                backgroundColor: colors.dangerBg,
-                borderColor: alpha(colors.danger, 0.3),
-                paddingHorizontal: 8,
-              },
-            ]}
-            onPress={() => onDeleteCard(activeCard)}
-          >
-            <CustomIcon name="Trash2" size={13} color={colors.danger} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={[
+            styles.contextMenuTriggerBtn,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.borderLight },
+          ]}
+          onPress={() => setContextMenuVisible(true)}
+          accessibilityLabel="Más opciones de tarjeta"
+        >
+          <CustomIcon name="MoreVertical" size={20} color={colors.textPrimary} />
+        </TouchableOpacity>
       </View>
 
       {/* 1. TARJETA ACTIVA DESTACADA (ARRIBA) CON ANIMACIÓN DE VUELO */}
@@ -532,7 +519,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
         </TouchableOpacity>
       </Animated.View>
 
-      {/* 2. SECCIÓN CENTRAL DE BALANCE CON CONTADOR ANIMADO + BOTÓN RÁPIDO (IDÉNTICO AL VIDEO) */}
+      {/* 2. SECCIÓN CENTRAL DE BALANCE CON CONTADOR ANIMADO */}
       <View style={styles.balanceHeroSection}>
         <View style={styles.balanceLeftCol}>
           {/* Pestañas sutiles para alternar qué cifra ver en grande */}
@@ -618,24 +605,49 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
               balanceMode === 'billed' && billedThisMonth > 0 && { color: colors.warning },
             ]}
           />
-          <Text style={[styles.totalLimitSubtext, { color: colors.textMuted }]}>
+          <Text style={[styles.totalLimitSubtext, { color: colors.textSecondary }]}>
             Cupo Total:{' '}
             {isBalanceHidden
               ? '••••••'
               : formatCurrency(activeCard.creditLimit, activeCard.currency || currency)}
           </Text>
         </View>
+      </View>
 
-        {/* Botón cuadrado redondeado con flecha de acción (como en el video a la derecha del Balance) */}
+      {/* 2B. DOS ÚNICAS ACCIONES PRIMARIAS (MIN-HEIGHT: 48PX, ALTO CONTRASTE) */}
+      <View style={styles.primaryActionsRow}>
         <TouchableOpacity
           style={[
-            styles.quickShareArrowBtn,
-            { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+            styles.primaryActionBtn,
+            {
+              backgroundColor: colors.success,
+              borderColor: colors.success,
+            },
+          ]}
+          onPress={() => onOpenAddPurchase(activeCard)}
+          activeOpacity={0.8}
+        >
+          <CustomIcon name="Plus" size={18} color="#FFFFFF" />
+          <Text style={styles.primaryActionBtnText} numberOfLines={1}>
+            Registrar Compra
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.primaryActionBtn,
+            {
+              backgroundColor: colors.primary,
+              borderColor: colors.primary,
+            },
           ]}
           onPress={() => onOpenPay(activeCard)}
           activeOpacity={0.8}
         >
-          <CustomIcon name="ArrowUpRight" size={22} color={colors.textPrimary} />
+          <CustomIcon name="CreditCard" size={18} color="#FFFFFF" />
+          <Text style={styles.primaryActionBtnText} numberOfLines={1}>
+            Abonar / Pagar
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -763,52 +775,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
         </TouchableOpacity>
       )}
 
-      {/* 4. BARRA DE ACCIONES OPERATIVAS DE LA TARJETA ACTIVA */}
-      <View style={styles.cardActionsBar}>
-        <TouchableOpacity
-          style={[
-            styles.cardActionBtn,
-            { backgroundColor: colors.primary, borderColor: colors.primary },
-          ]}
-          onPress={() => onOpenPay(activeCard)}
-          activeOpacity={0.7}
-        >
-          <CustomIcon name="CreditCard" size={14} color="#FFFFFF" />
-          <Text style={styles.cardActionBtnTextPrimary} numberOfLines={1}>
-            Pagar
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.cardActionBtn,
-            { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
-          ]}
-          onPress={() => onOpenStatement(activeCard)}
-          activeOpacity={0.7}
-        >
-          <CustomIcon name="FileText" size={14} color={colors.textSecondary} />
-          <Text style={[styles.cardActionBtnText, { color: colors.textSecondary }]} numberOfLines={1}>
-            Extracto
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.cardActionBtn,
-            { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
-          ]}
-          onPress={() => onOpenReconcile(activeCard)}
-          activeOpacity={0.7}
-        >
-          <CustomIcon name="ShieldCheck" size={14} color={colors.textSecondary} />
-          <Text style={[styles.cardActionBtnText, { color: colors.textSecondary }]} numberOfLines={1}>
-            Conciliar
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* 5. COMPRAS A CUOTAS DE LA TARJETA ACTIVA */}
+      {/* 4. COMPRAS A CUOTAS DE LA TARJETA ACTIVA */}
       {activeCardPurchases.length > 0 && (
         <View
           style={[
@@ -820,11 +787,6 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
             <Text style={[styles.cardPurchasesTitle, { color: colors.textSecondary }]}>
               Compras a Cuotas en {activeCard.name} ({activeCardPurchases.length})
             </Text>
-            <TouchableOpacity onPress={onOpenAddPurchase}>
-              <Text style={[styles.addPurchaseInlineLink, { color: colors.primaryLight }]}>
-                + Nueva
-              </Text>
-            </TouchableOpacity>
           </View>
 
           {activeCardPurchases.map((p) => (
@@ -853,6 +815,150 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
           ))}
         </View>
       )}
+
+      {/* MENÚ CONTEXTUAL (⋮) DE TARJETA ACTIVA */}
+      <Modal
+        visible={contextMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setContextMenuVisible(false)}
+      >
+        <Pressable
+          style={styles.contextMenuBackdrop}
+          onPress={() => setContextMenuVisible(false)}
+        >
+          <Pressable
+            style={[
+              styles.contextMenuSheet,
+              { backgroundColor: colors.surfaceCard, borderColor: colors.borderLight },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={[styles.contextMenuHeader, { borderBottomColor: colors.divider }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.contextMenuCardBank, { color: colors.textSecondary }]}>
+                  {activeCard.bankName.toUpperCase()} •••• {activeCard.lastFourDigits || '0000'}
+                </Text>
+                <Text style={[styles.contextMenuCardName, { color: colors.textPrimary }]}>
+                  {activeCard.name}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.contextMenuCloseBtn, { backgroundColor: colors.surfaceElevated }]}
+                onPress={() => setContextMenuVisible(false)}
+              >
+                <CustomIcon name="X" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.contextMenuItem}
+              onPress={() => {
+                setContextMenuVisible(false);
+                onOpenStatement(activeCard);
+              }}
+            >
+              <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.primary, 0.15) }]}>
+                <CustomIcon name="FileText" size={18} color={colors.primaryLight} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
+                  Ver Extracto y Proyección
+                </Text>
+                <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                  Detalle al corte, cargos y calendario de pagos
+                </Text>
+              </View>
+              <CustomIcon name="ChevronRight" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.contextMenuItem}
+              onPress={() => {
+                setContextMenuVisible(false);
+                onOpenReconcile(activeCard);
+              }}
+            >
+              <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.success, 0.15) }]}>
+                <CustomIcon name="ShieldCheck" size={18} color={colors.success} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
+                  Conciliar Saldo
+                </Text>
+                <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                  Ajusta el cupo disponible con el de tu banco
+                </Text>
+              </View>
+              <CustomIcon name="ChevronRight" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.contextMenuItem}
+              onPress={() => {
+                setContextMenuVisible(false);
+                onOpenManualStatement(activeCard, 'opening_balance');
+              }}
+            >
+              <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.warning, 0.15) }]}>
+                <CustomIcon name="SlidersHorizontal" size={18} color={colors.warning} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
+                  Saldo Inicial / Apertura
+                </Text>
+                <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                  Configura deuda previa o extracto manual
+                </Text>
+              </View>
+              <CustomIcon name="ChevronRight" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.contextMenuItem}
+              onPress={() => {
+                setContextMenuVisible(false);
+                onEditCard(activeCard);
+              }}
+            >
+              <View style={[styles.contextMenuIconWrap, { backgroundColor: colors.surfaceElevated }]}>
+                <CustomIcon name="Edit3" size={18} color={colors.textPrimary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
+                  Editar Tarjeta
+                </Text>
+                <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                  Cupo total, día de corte, pago y tasa E.M.
+                </Text>
+              </View>
+              <CustomIcon name="ChevronRight" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <View style={[styles.contextMenuDivider, { backgroundColor: colors.divider }]} />
+
+            <TouchableOpacity
+              style={styles.contextMenuItem}
+              onPress={() => {
+                setContextMenuVisible(false);
+                onDeleteCard(activeCard);
+              }}
+            >
+              <View style={[styles.contextMenuIconWrap, { backgroundColor: colors.dangerBg }]}>
+                <CustomIcon name="Trash2" size={18} color={colors.danger} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.contextMenuItemTitle, { color: colors.danger }]}>
+                  Eliminar Tarjeta
+                </Text>
+                <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                  Eliminar o archivar tarjeta de crédito
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -909,31 +1015,104 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '600',
   },
-  topActionsGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  iconBtnSmall: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(30, 41, 59, 0.85)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+  contextMenuTriggerBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  iconBtnDanger: {
-    backgroundColor: 'rgba(239, 68, 68, 0.14)',
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    paddingHorizontal: 8,
+  primaryActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
   },
-  iconBtnSmallText: {
-    color: '#CBD5E1',
-    fontSize: 11,
-    fontWeight: '600',
+  primaryActionBtn: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  primaryActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  contextMenuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  contextMenuSheet: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingVertical: 8,
+    overflow: 'hidden',
+  },
+  contextMenuHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    marginBottom: 4,
+  },
+  contextMenuCardBank: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  contextMenuCardName: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  contextMenuCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contextMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    minHeight: 56,
+    gap: 12,
+  },
+  contextMenuIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contextMenuItemTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  contextMenuItemSub: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  contextMenuDivider: {
+    height: 1,
+    marginVertical: 4,
+    marginHorizontal: 18,
   },
   activeCardSlot: {
     width: CARD_WIDTH,

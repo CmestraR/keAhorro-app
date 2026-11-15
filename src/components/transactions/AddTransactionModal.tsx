@@ -23,6 +23,7 @@ interface AddTransactionModalProps {
   visible: boolean;
   onClose: () => void;
   defaultType?: 'expense' | 'income' | 'card_purchase' | 'transfer';
+  defaultCardId?: string | null;
   prefillData?: Partial<ParsedBankMessage> | null;
 }
 
@@ -62,6 +63,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   visible,
   onClose,
   defaultType = 'expense',
+  defaultCardId,
   prefillData,
 }) => {
   const {
@@ -107,8 +109,14 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     if (visible) {
       setSelectedDate(getTodayStr());
       setShowCustomDateInput(false);
+      setActiveTab(defaultType);
+      if (defaultCardId) {
+        setSelectedCardId(defaultCardId);
+      } else if (creditCards[0]?.id) {
+        setSelectedCardId((prev) => prev || creditCards[0].id);
+      }
     }
-  }, [visible]);
+  }, [visible, defaultType, defaultCardId, creditCards]);
 
   // Auto-llenado si viene de detección de notificación bancaria
   useEffect(() => {
