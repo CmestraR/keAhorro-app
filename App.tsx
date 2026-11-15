@@ -38,7 +38,9 @@ function MainApp() {
   const [filterAccountId, setFilterAccountId] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isVoiceOverlayOpen, setIsVoiceOverlayOpen] = useState(false);
+  const [isHoldingVoiceBtn, setIsHoldingVoiceBtn] = useState(false);
   const [aiExtractedForModal, setAiExtractedForModal] = useState<GeminiExtractedTransaction | null>(null);
+  const longPressTriggeredRef = React.useRef(false);
 
   useEffect(() => {
     NotificationService.init();
@@ -160,17 +162,31 @@ function MainApp() {
                 <TouchableOpacity
                   key={item.id}
                   style={styles.centerNavBtn}
+                  onPressIn={() => {
+                    longPressTriggeredRef.current = false;
+                  }}
                   onPress={() => {
+                    if (longPressTriggeredRef.current) {
+                      longPressTriggeredRef.current = false;
+                      return;
+                    }
                     setAiExtractedForModal(null);
                     setIsAddModalOpen(true);
                   }}
-                  delayLongPress={300}
+                  delayLongPress={260}
                   onLongPress={() => {
+                    longPressTriggeredRef.current = true;
                     if (voiceHoldEnabled) {
+                      setIsHoldingVoiceBtn(true);
                       setIsVoiceOverlayOpen(true);
                     } else {
                       setAiExtractedForModal(null);
                       setIsAddModalOpen(true);
+                    }
+                  }}
+                  onPressOut={() => {
+                    if (isHoldingVoiceBtn) {
+                      setIsHoldingVoiceBtn(false);
                     }
                   }}
                   activeOpacity={0.8}
@@ -256,8 +272,13 @@ function MainApp() {
       {/* Overlay Futurista de Dictado por Voz al mantener presionado (+) */}
       <VoiceAssistantOverlay
         visible={isVoiceOverlayOpen}
-        onClose={() => setIsVoiceOverlayOpen(false)}
+        isExternalHolding={isHoldingVoiceBtn}
+        onClose={() => {
+          setIsHoldingVoiceBtn(false);
+          setIsVoiceOverlayOpen(false);
+        }}
         onReviewInForm={(extracted) => {
+          setIsHoldingVoiceBtn(false);
           setIsVoiceOverlayOpen(false);
           setAiExtractedForModal(extracted);
           setIsAddModalOpen(true);

@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Modal,
   View,
   StyleSheet,
   Animated,
   Easing,
   Platform,
   ActivityIndicator,
-  ScrollView,
+  Pressable,
+  TextInput as RNTextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFinancial } from '../../context/FinancialContext';
@@ -21,85 +21,404 @@ import { calculateMonthlyQuota, generateAmortizationSchedule } from '../../utils
 import { formatCurrency } from '../../utils/formatters';
 import { CardPurchase, Transaction, TransactionType } from '../../types/finance';
 import { CustomIcon } from '../common/CustomIcon';
-import { Text, TextInput } from '../common/AppText';
+import { Text } from '../common/AppText';
 import { TouchableOpacity } from '../common/Touchable';
 
 interface VoiceAssistantOverlayProps {
   visible: boolean;
+  isExternalHolding?: boolean;
   onClose: () => void;
+  onSavedSuccess?: () => void;
   onReviewInForm?: (extracted: GeminiExtractedTransaction) => void;
+}
+
+interface SavedRecordInfo {
+  kind: 'transaction' | 'purchase';
+  id: string;
+  data: GeminiExtractedTransaction;
 }
 
 const WAVE_BAR_COUNT = 18;
 
-const VOICE_EXAMPLES = [
-  'Me pagaron 10.000 de Andrés en Nequi',
-  'Compré almuerzo de 35.000 con la Visa a 1 cuota',
-  'Gasté 48.000 en supermercado ayer',
-];
-
 export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
   visible,
+  isExternalHolding = false,
   onClose,
-  onReviewInForm,
+  onSavedSuccess,
 }) => {
   const {
     accounts,
     creditCards,
     categories,
     addTransaction,
+    deleteTransaction,
     addCardPurchase,
+    deleteCardPurchase,
     currency,
   } = useFinancial();
-  const { geminiApiKey, geminiModel, openAISettingsModal } = useAI();
-  const { showSuccess, showWarning, showError } = useAlert();
+  const { geminiApiKey, geminiModel } = useAI();
+  const { showWarning, showError, showSuccess } = useAlert();
 
   const [isListening, setIsListening] = useState(true);
+  const [isInternalHolding, setIsInternalHolding] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [extractedResult, setExtractedResult] = useState<GeminiExtractedTransaction | null>(null);
-  const [extractionSource, setExtractionSource] = useState<'gemini' | 'local_fallback'>('gemini');
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedRecord, setSavedRecord] = useState<SavedRecordInfo | null>(null);
 
+  const transcriptRef = useRef('');
+  const isSavingRef = useRef(false);
+  const hasSavedRef = useRef(false);
+  const prevExternalHoldingRef = useRef(isExternalHolding);
+  const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const silenceDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recognitionRef = useRef<any>(null);
-  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const hiddenInputRef = useRef<RNTextInput | null>(null);
+
+  const dotPulseAnim = useRef(new Animated.Value(1)).current;
   const waveAnims = useRef(
-    Array.from({ length: WAVE_BAR_COUNT }, () => new Animated.Value(0.25))
+    Array.from({ length: WAVE_BAR_COUNT }, () => new Animated.Value(0.22))
   ).current;
 
-  // Animación continua de ondas de audio futuristas (Esmeralda #10B981, Índigo #6366F1, Cian #06B6D4)
+  const updateTranscript = useCallback((text: string) => {
+    transcriptRef.current = text;
+    setTranscript(text);
+  }, []);
+
+  const clearTimers = useCallback(() => {
+    if (autoCloseTimerRef.current) {
+      clearTimeout(autoCloseTimerRef.current);
+      autoCloseTimerRef.current = null;
+    }
+    if (silenceDebounceRef.current) {
+      clearTimeout(silenceDebounceRef.current);
+      silenceDebounceRef.current = null;
+    }
+  }, []);
+
+  const stopSpeechRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      recognitionRef.current = null;
+    }
+  }, []);
+
+  const startSpeechRecognition = useCallback(() => {
+    setIsListening(true);
+
+    // 1. Web Speech API (Chrome / Web / Android WebView)
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          stopSpeechRecognition();
+          const recognition = new SpeechRecognition();
+          recognition.lang = 'es-CO';
+          recognition.interimResults = true;
+          recognition.continuous = true;
+
+          recognition.onresult = (event: any) => {
+            let liveText = '';
+            for (let i = 0; i < event.results.length; i++) {
+              liveText += event.results[i][0].transcript;
+            }
+            if (liveText.trim()) {
+              updateTranscript(liveText.trim());
+            }
+          };
+
+          recognition.onerror = () => {};
+          recognition.onend = () => {};
+
+          recognition.start();
+          recognitionRef.current = recognition;
+        } catch {}
+      }
+    }
+
+    // 2. Foco en input invisible para dictado de voz del sistema en Android / iOS
+    setTimeout(() => {
+      hiddenInputRef.current?.focus();
+    }, 80);
+  }, [stopSpeechRecognition, updateTranscript]);
+
+  // Ejecuta Gemini + Guardado Automático sin pedir confirmación manual
+  const processAndAutoSave = useCallback(
+    async (rawText?: string) => {
+      const cleanText = (rawText ?? transcriptRef.current).trim();
+      if (!cleanText || isSavingRef.current || hasSavedRef.current) {
+        return;
+      }
+
+      if (silenceDebounceRef.current) {
+        clearTimeout(silenceDebounceRef.current);
+        silenceDebounceRef.current = null;
+      }
+
+      stopSpeechRecognition();
+      setIsListening(false);
+      isSavingRef.current = true;
+      setIsSaving(true);
+
+      try {
+        const { data: extracted } = await extractTransactionWithGemini({
+          transcript: cleanText,
+          apiKey: geminiApiKey,
+          model: geminiModel,
+          accounts,
+          creditCards,
+          categories,
+        });
+
+        if (extracted.monto <= 0) {
+          isSavingRef.current = false;
+          setIsSaving(false);
+          setIsListening(true);
+          showWarning(
+            'Monto no detectado',
+            'Di el valor del movimiento, por ejemplo: "Compra de leche por 3.000".'
+          );
+          return;
+        }
+
+        const nowIso = new Date().toISOString();
+        const txDate = extracted.fechaISO || nowIso.split('T')[0];
+
+        if (extracted.tipo === 'TARJETA') {
+          const targetCard =
+            creditCards.find((c) => c.id === extracted.tarjetaId) || creditCards[0];
+          if (!targetCard) {
+            isSavingRef.current = false;
+            setIsSaving(false);
+            showWarning('Tarjeta Requerida', 'Registra primero una tarjeta de crédito.');
+            onClose();
+            return;
+          }
+
+          const installmentsTotal = Math.max(1, extracted.cuotas || 1);
+          const rate = installmentsTotal === 1 ? 0 : targetCard.interestRateMonthly || 0;
+          const monthlyQuota = calculateMonthlyQuota(
+            extracted.monto,
+            rate,
+            installmentsTotal
+          );
+
+          const startDate = new Date(txDate + 'T12:00:00');
+          const purchaseId = `purch-${Date.now()}`;
+          const newPurchase: CardPurchase = {
+            id: purchaseId,
+            cardId: targetCard.id,
+            description: extracted.concepto,
+            categoryId:
+              extracted.categoriaId ||
+              categories.find((c) => c.type === 'expense')?.id ||
+              'cat-food',
+            amount: extracted.monto,
+            installmentsTotal,
+            installmentsPaid: 0,
+            monthlyInstallmentAmount: monthlyQuota,
+            interestRateMonthly: rate,
+            firstInstallmentDate: txDate,
+            status: 'active',
+            createdAt: txDate,
+          };
+
+          const schedule = generateAmortizationSchedule(
+            purchaseId,
+            extracted.monto,
+            rate,
+            installmentsTotal,
+            startDate,
+            0
+          );
+
+          await addCardPurchase(newPurchase, schedule);
+          hasSavedRef.current = true;
+          setSavedRecord({ kind: 'purchase', id: purchaseId, data: extracted });
+        } else if (extracted.tipo === 'TRANSFERENCIA') {
+          const originId = extracted.cuentaOrigenId || accounts[0]?.id;
+          const destId =
+            extracted.cuentaDestinoId ||
+            accounts.find((a) => a.id !== originId)?.id ||
+            originId;
+
+          if (!originId) {
+            isSavingRef.current = false;
+            setIsSaving(false);
+            showWarning('Cuenta Requerida', 'Registra primero una cuenta bancaria o billetera.');
+            onClose();
+            return;
+          }
+
+          const gmfAmount = extracted.aplica4x1000
+            ? Math.round(extracted.monto * 0.004)
+            : undefined;
+
+          const txId = `tx-${Date.now()}`;
+          const newTx: Transaction = {
+            id: txId,
+            accountId: originId,
+            toAccountId: destId,
+            type: 'transfer',
+            amount: extracted.monto,
+            categoryId: 'cat-financial',
+            description: extracted.concepto,
+            date: txDate,
+            gmfAmount,
+            createdAt: nowIso,
+          };
+
+          await addTransaction(newTx);
+          hasSavedRef.current = true;
+          setSavedRecord({ kind: 'transaction', id: txId, data: extracted });
+        } else {
+          const originId = extracted.cuentaOrigenId || accounts[0]?.id;
+          if (!originId) {
+            isSavingRef.current = false;
+            setIsSaving(false);
+            showWarning('Cuenta Requerida', 'Registra primero una cuenta bancaria o billetera.');
+            onClose();
+            return;
+          }
+
+          const txType: TransactionType =
+            extracted.tipo === 'INGRESO' ? 'income' : 'expense';
+          const gmfAmount =
+            txType === 'expense' && extracted.aplica4x1000
+              ? Math.round(extracted.monto * 0.004)
+              : undefined;
+
+          const txId = `tx-${Date.now()}`;
+          const newTx: Transaction = {
+            id: txId,
+            accountId: originId,
+            type: txType,
+            amount: extracted.monto,
+            categoryId:
+              extracted.categoriaId ||
+              categories.find((c) => c.type === txType)?.id ||
+              'cat-food',
+            description: extracted.concepto,
+            date: txDate,
+            gmfAmount,
+            createdAt: nowIso,
+          };
+
+          await addTransaction(newTx);
+          hasSavedRef.current = true;
+          setSavedRecord({ kind: 'transaction', id: txId, data: extracted });
+        }
+
+        // Cerrar automáticamente después de 2.2 segundos
+        autoCloseTimerRef.current = setTimeout(() => {
+          onSavedSuccess?.();
+          onClose();
+        }, 2200);
+      } catch {
+        showError('Error', 'No fue posible guardar el movimiento por voz.');
+      } finally {
+        isSavingRef.current = false;
+        setIsSaving(false);
+      }
+    },
+    [
+      accounts,
+      addCardPurchase,
+      addTransaction,
+      categories,
+      creditCards,
+      geminiApiKey,
+      geminiModel,
+      onClose,
+      onSavedSuccess,
+      showError,
+      showWarning,
+      stopSpeechRecognition,
+    ]
+  );
+
+  // Detectar cuando el usuario SUELTA el botón central (+ / 🎙️) desde App.tsx
+  useEffect(() => {
+    if (prevExternalHoldingRef.current && !isExternalHolding && visible) {
+      if (transcriptRef.current.trim().length > 0) {
+        processAndAutoSave(transcriptRef.current);
+      }
+    }
+    prevExternalHoldingRef.current = isExternalHolding;
+  }, [isExternalHolding, visible, processAndAutoSave]);
+
+  // Si el texto entra por dictado de voz del sistema (Android), auto-guardar al terminar la frase
+  const handleSystemVoiceTranscriptChange = (text: string) => {
+    updateTranscript(text);
+    if (silenceDebounceRef.current) {
+      clearTimeout(silenceDebounceRef.current);
+    }
+    if (!isExternalHolding && !isInternalHolding && text.trim().length >= 4) {
+      silenceDebounceRef.current = setTimeout(() => {
+        if (!isExternalHolding && !isInternalHolding && transcriptRef.current.trim().length >= 4) {
+          processAndAutoSave(transcriptRef.current);
+        }
+      }, 1250);
+    }
+  };
+
+  // revertir movimiento recién creado ("Deshacer")
+  const handleUndoSaved = async () => {
+    if (!savedRecord) return;
+    clearTimers();
+    try {
+      if (savedRecord.kind === 'purchase') {
+        await deleteCardPurchase(savedRecord.id);
+      } else {
+        await deleteTransaction(savedRecord.id);
+      }
+      showSuccess('Movimiento Deshecho', 'Se revirtió el registro automáticamente.');
+    } catch {
+      showError('Error', 'No se pudo deshacer el movimiento.');
+    } finally {
+      onClose();
+    }
+  };
+
+  // Ciclo de vida al abrir/cerrar el overlay
   useEffect(() => {
     if (!visible) {
-      stopWebSpeech();
+      clearTimers();
+      stopSpeechRecognition();
       return;
     }
 
-    setTranscript('');
-    setExtractedResult(null);
-    setIsProcessing(false);
+    updateTranscript('');
+    setSavedRecord(null);
+    setIsSaving(false);
+    isSavingRef.current = false;
+    hasSavedRef.current = false;
     setIsListening(true);
 
-    startWebSpeechIfAvailable();
+    startSpeechRecognition();
 
-    const pulseLoop = Animated.loop(
+    const dotLoop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1100,
+        Animated.timing(dotPulseAnim, {
+          toValue: 0.3,
+          duration: 650,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
-        Animated.timing(pulseAnim, {
-          toValue: 0,
-          duration: 1100,
+        Animated.timing(dotPulseAnim, {
+          toValue: 1,
+          duration: 650,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
       ])
     );
-    pulseLoop.start();
+    dotLoop.start();
 
     const barLoops = waveAnims.map((anim, idx) => {
-      const duration = 280 + (idx % 5) * 95;
+      const duration = 240 + (idx % 5) * 85;
       return Animated.loop(
         Animated.sequence([
           Animated.timing(anim, {
@@ -110,7 +429,7 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
           }),
           Animated.timing(anim, {
             toValue: 0.2,
-            duration: duration + 40,
+            duration: duration + 35,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
@@ -121,457 +440,231 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
     barLoops.forEach((l) => l.start());
 
     return () => {
-      pulseLoop.stop();
+      dotLoop.stop();
       barLoops.forEach((l) => l.stop());
-      stopWebSpeech();
+      clearTimers();
+      stopSpeechRecognition();
     };
-  }, [visible]);
+  }, [visible, clearTimers, dotPulseAnim, startSpeechRecognition, stopSpeechRecognition, updateTranscript, waveAnims]);
 
-  const startWebSpeechIfAvailable = () => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const SpeechRecognition =
-        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        try {
-          const recognition = new SpeechRecognition();
-          recognition.lang = 'es-CO';
-          recognition.interimResults = true;
-          recognition.continuous = false;
+  if (!visible) return null;
 
-          recognition.onresult = (event: any) => {
-            let liveText = '';
-            for (let i = 0; i < event.results.length; i++) {
-              liveText += event.results[i][0].transcript;
-            }
-            setTranscript(liveText);
-          };
-
-          recognition.onerror = () => {
-            setIsListening(false);
-          };
-
-          recognition.onend = () => {
-            setIsListening(false);
-          };
-
-          recognition.start();
-          recognitionRef.current = recognition;
-        } catch {
-          // continúa con input interactivo
-        }
-      }
-    }
-  };
-
-  const stopWebSpeech = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {}
-      recognitionRef.current = null;
-    }
-  };
-
-  const handleAnalyzeWithGemini = async (textToProcess?: string) => {
-    const cleanText = (textToProcess ?? transcript).trim();
-    if (!cleanText) {
-      showWarning('Dicta o escribe tu movimiento', 'Di por ejemplo: "Compré almuerzo de 35.000 con la Visa a 1 cuota".');
-      return;
-    }
-
-    stopWebSpeech();
-    setIsListening(false);
-    setIsProcessing(true);
-
-    try {
-      const { data, source } = await extractTransactionWithGemini({
-        transcript: cleanText,
-        apiKey: geminiApiKey,
-        model: geminiModel,
-        accounts,
-        creditCards,
-        categories,
-      });
-      setExtractedResult(data);
-      setExtractionSource(source);
-    } catch {
-      showError('Error de IA', 'No fue posible procesar el comando de voz.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleConfirmAndSave = async () => {
-    if (!extractedResult) return;
-    if (extractedResult.monto <= 0) {
-      showWarning('Monto no detectado', 'Revisa el movimiento en el formulario para ajustar el valor.');
-      if (onReviewInForm) {
-        onClose();
-        onReviewInForm(extractedResult);
-      }
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-    const txDate = extractedResult.fechaISO || nowIso.split('T')[0];
-
-    try {
-      if (extractedResult.tipo === 'TARJETA') {
-        const targetCard =
-          creditCards.find((c) => c.id === extractedResult.tarjetaId) || creditCards[0];
-        if (!targetCard) {
-          showWarning('Tarjeta Requerida', 'Registra primero una tarjeta de crédito.');
-          return;
-        }
-
-        const installmentsTotal = Math.max(1, extractedResult.cuotas || 1);
-        const rate = installmentsTotal === 1 ? 0 : targetCard.interestRateMonthly || 0;
-        const monthlyQuota = calculateMonthlyQuota(
-          extractedResult.monto,
-          rate,
-          installmentsTotal
-        );
-
-        const startDate = new Date(txDate + 'T12:00:00');
-        const purchaseId = `purch-${Date.now()}`;
-        const newPurchase: CardPurchase = {
-          id: purchaseId,
-          cardId: targetCard.id,
-          description: extractedResult.concepto,
-          categoryId:
-            extractedResult.categoriaId ||
-            categories.find((c) => c.type === 'expense')?.id ||
-            'cat-food',
-          amount: extractedResult.monto,
-          installmentsTotal,
-          installmentsPaid: 0,
-          monthlyInstallmentAmount: monthlyQuota,
-          interestRateMonthly: rate,
-          firstInstallmentDate: txDate,
-          status: 'active',
-          createdAt: txDate,
-        };
-
-        const schedule = generateAmortizationSchedule(
-          purchaseId,
-          extractedResult.monto,
-          rate,
-          installmentsTotal,
-          startDate,
-          0
-        );
-
-        await addCardPurchase(newPurchase, schedule);
-        showSuccess('¡Compra con IA Registrada!', extractedResult.resumenHumano);
-      } else if (extractedResult.tipo === 'TRANSFERENCIA') {
-        const originId = extractedResult.cuentaOrigenId || accounts[0]?.id;
-        const destId =
-          extractedResult.cuentaDestinoId ||
-          accounts.find((a) => a.id !== originId)?.id;
-
-        if (!originId || !destId || originId === destId) {
-          if (onReviewInForm) {
-            onClose();
-            onReviewInForm(extractedResult);
-          }
-          return;
-        }
-
-        const gmfAmount = extractedResult.aplica4x1000
-          ? Math.round(extractedResult.monto * 0.004)
-          : undefined;
-
-        const newTx: Transaction = {
-          id: `tx-${Date.now()}`,
-          accountId: originId,
-          toAccountId: destId,
-          type: 'transfer',
-          amount: extractedResult.monto,
-          categoryId: 'cat-financial',
-          description: extractedResult.concepto,
-          date: txDate,
-          gmfAmount,
-          createdAt: nowIso,
-        };
-
-        await addTransaction(newTx);
-        showSuccess('¡Transferencia con IA Registrada!', extractedResult.resumenHumano);
-      } else {
-        const originId = extractedResult.cuentaOrigenId || accounts[0]?.id;
-        if (!originId) {
-          showWarning('Cuenta Requerida', 'Registra primero una cuenta bancaria o billetera.');
-          return;
-        }
-
-        const txType: TransactionType =
-          extractedResult.tipo === 'INGRESO' ? 'income' : 'expense';
-        const gmfAmount =
-          txType === 'expense' && extractedResult.aplica4x1000
-            ? Math.round(extractedResult.monto * 0.004)
-            : undefined;
-
-        const newTx: Transaction = {
-          id: `tx-${Date.now()}`,
-          accountId: originId,
-          type: txType,
-          amount: extractedResult.monto,
-          categoryId:
-            extractedResult.categoriaId ||
-            categories.find((c) => c.type === txType)?.id ||
-            'cat-food',
-          description: extractedResult.concepto,
-          date: txDate,
-          gmfAmount,
-          createdAt: nowIso,
-        };
-
-        await addTransaction(newTx);
-        showSuccess('¡Movimiento con IA Registrado!', extractedResult.resumenHumano);
-      }
-
-      onClose();
-    } catch {
-      showError('Error', 'No se pudo guardar el movimiento.');
+  const getBadgeColors = (tipo: GeminiExtractedTransaction['tipo']) => {
+    switch (tipo) {
+      case 'INGRESO':
+        return { bg: 'rgba(16, 185, 129, 0.2)', text: '#34D399' };
+      case 'TARJETA':
+        return { bg: 'rgba(99, 102, 241, 0.22)', text: '#818CF8' };
+      case 'TRANSFERENCIA':
+        return { bg: 'rgba(59, 130, 246, 0.22)', text: '#60A5FA' };
+      default:
+        return { bg: 'rgba(244, 63, 94, 0.2)', text: '#FB7185' };
     }
   };
 
   return (
-    <Modal
-      visible={visible}
-      animationType="fade"
-      transparent
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <View style={styles.overlayContainer}>
-        {/* Halo de luz superior futurista */}
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.ambientOrb,
-            {
-              opacity: pulseAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.22, 0.45],
-              }),
-              transform: [
-                {
-                  scale: pulseAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.95, 1.12],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <LinearGradient
-            colors={['#10B981', '#6366F1', '#06B6D4']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFillObject}
-          />
-        </Animated.View>
+    <View style={styles.rootOverlay} pointerEvents="box-none">
+      <Pressable
+        style={styles.backdropPressable}
+        onPress={() => {
+          if (savedRecord) {
+            clearTimers();
+            onSavedSuccess?.();
+            onClose();
+          } else if (!isSaving) {
+            onClose();
+          }
+        }}
+      >
+        {/* Input invisible (1x1px, opacidad 0) para capturar dictado por voz nativo del teclado Android sin mostrar ninguna caja */}
+        <RNTextInput
+          ref={hiddenInputRef}
+          style={styles.hiddenVoiceReceiver}
+          value={transcript}
+          onChangeText={handleSystemVoiceTranscriptChange}
+          onSubmitEditing={() => {
+            if (transcriptRef.current.trim().length > 0) {
+              processAndAutoSave(transcriptRef.current);
+            }
+          }}
+          autoFocus
+          caretHidden
+           underlineColorAndroid="transparent"
+        />
 
-        {/* Barra Superior */}
-        <View style={styles.topHeader}>
+        {/* 1. Indicador Superior Minimalista y Centrado */}
+        <View style={styles.topMinimalBar}>
+          <View style={styles.topSpacer} />
+
+          <View style={styles.minimalStatusBadge}>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#34D399" />
+            ) : (
+              <Animated.View
+                style={[
+                  styles.pulsingDot,
+                  {
+                    opacity: dotPulseAnim,
+                    backgroundColor: savedRecord ? '#10B981' : '#34D399',
+                  },
+                ]}
+              />
+            )}
+            <Text style={styles.minimalStatusText}>
+              {isSaving
+                ? 'Guardando movimiento...'
+                : savedRecord
+                ? 'Listo'
+                : 'Escuchando...'}
+            </Text>
+          </View>
+
           <TouchableOpacity
-            style={styles.aiStatusPill}
+            style={styles.closeCornerBtn}
             onPress={() => {
+              clearTimers();
               onClose();
-              openAISettingsModal();
             }}
           >
-            <View
-              style={[
-                styles.statusDot,
-                { backgroundColor: geminiApiKey ? '#10B981' : '#F59E0B' },
-              ]}
-            />
-            <Text style={styles.aiStatusText}>
-              {geminiApiKey
-                ? `Gemini Activo (${geminiModel})`
-                : 'IA Local • Toca para configurar Gemini API Key'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-            <CustomIcon name="X" size={20} color="#CBD5E1" />
+            <CustomIcon name="X" size={18} color="#94A3B8" />
           </TouchableOpacity>
         </View>
 
-        <ScrollView
-          contentContainerStyle={styles.centerContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.badgeRow}>
-            <CustomIcon name="Mic" size={16} color="#10B981" />
-            <Text style={styles.listeningTag}>
-              {isProcessing
-                ? 'PROCESANDO CON GEMINI IA...'
-                : isListening
-                ? 'ESCUCHANDO TU VOZ EN VIVO...'
-                : 'LISTO PARA PROCESAR'}
-            </Text>
-          </View>
+        {/* 2. Zona Central: Transcripción Flotante Limpia O Tarjeta de Éxito */}
+        <View style={styles.centerStage}>
+          {!savedRecord ? (
+            <Pressable
+              style={styles.floatingTranscriptWrap}
+              onPress={() => hiddenInputRef.current?.focus()}
+            >
+              {transcript.trim().length > 0 ? (
+                <Text style={styles.floatingLiveTranscript}>
+                  “{transcript}”
+                </Text>
+              ) : (
+                <Text style={styles.floatingGuidePlaceholder}>
+                  {isSaving
+                    ? 'Guardando movimiento...'
+                    : 'Mantén presionado y di tu gasto, ingreso o transferencia...'}
+                </Text>
+              )}
+            </Pressable>
+          ) : (
+            /* 3. Tarjeta de Movimiento Registrado (Sin desbordamiento / No Overflow) */
+            <Pressable
+              style={styles.savedCard}
+              onPress={(e) => e.stopPropagation()}
+            >
+              {/* Encabezado: flex items-center justify-between gap-2 flex-wrap */}
+              <View style={styles.savedCardHeader}>
+                <View style={styles.savedCardTitleWrap}>
+                  <CustomIcon name="CheckCircle2" size={19} color="#10B981" />
+                  <Text style={styles.savedCardTitleText}>
+                    ¡Movimiento Guardado!
+                  </Text>
+                </View>
 
-          <Text style={styles.heroTitle}>
-            Dicta tu gasto, ingreso o compra con tarjeta
-          </Text>
-
-          {/* Cuadro de Transcripción en Vivo */}
-          <View style={styles.transcriptCard}>
-            <TextInput
-              style={styles.transcriptInput}
-              placeholder='Di o escribe aquí: "Compré almuerzo de 35.000 con la Visa a 1 cuota"...'
-              placeholderTextColor="#94A3B8"
-              multiline
-              autoFocus
-              value={transcript}
-              onChangeText={(text) => {
-                setTranscript(text);
-                if (extractedResult) setExtractedResult(null);
-              }}
-            />
-
-            {transcript.length > 0 && (
-              <View style={styles.transcriptActionsRow}>
-                <TouchableOpacity
-                  style={styles.clearBtn}
-                  onPress={() => {
-                    setTranscript('');
-                    setExtractedResult(null);
-                  }}
+                <View
+                  style={[
+                    styles.savedTypePill,
+                    { backgroundColor: getBadgeColors(savedRecord.data.tipo).bg },
+                  ]}
                 >
-                  <CustomIcon name="RotateCcw" size={14} color="#94A3B8" />
-                  <Text style={styles.clearBtnText}>Limpiar</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.processNowBtn}
-                  onPress={() => handleAnalyzeWithGemini()}
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <CustomIcon name="Sparkles" size={15} color="#FFFFFF" />
-                  )}
-                  <Text style={styles.processNowBtnText}>
-                    {isProcessing ? 'Analizando...' : 'Procesar con IA'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-
-          {/* Ejemplos sutiles interactivos */}
-          {!extractedResult && (
-            <View style={styles.examplesSection}>
-              <Text style={styles.examplesHint}>
-                Ejemplos rápidos (toca uno para probar al instante):
-              </Text>
-              {VOICE_EXAMPLES.map((ex, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.examplePill}
-                  onPress={() => {
-                    setTranscript(ex);
-                    handleAnalyzeWithGemini(ex);
-                  }}
-                >
-                  <CustomIcon name="Sparkles" size={14} color="#34D399" />
-                  <Text style={styles.examplePillText}>"{ex}"</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* Tarjeta de Resultado Extraído por Gemini (JSON estructurado) */}
-          {extractedResult && (
-            <View style={styles.resultCard}>
-              <View style={styles.resultHeader}>
-                <View style={styles.resultBadge}>
-                  <CustomIcon name="CheckCircle2" size={15} color="#10B981" />
-                  <Text style={styles.resultBadgeText}>
-                    {extractionSource === 'gemini'
-                      ? `EXTRAÍDO CON ${geminiModel.toUpperCase()}`
-                      : 'EXTRACCIÓN INTELIGENTE'}
-                  </Text>
-                </View>
-                <Text style={styles.resultTypeTag}>{extractedResult.tipo}</Text>
-              </View>
-
-              <Text style={styles.resultHumanSummary}>
-                {extractedResult.resumenHumano}
-              </Text>
-
-              <View style={styles.resultGrid}>
-                <View style={styles.resultCell}>
-                  <Text style={styles.resultCellLabel}>Monto</Text>
-                  <Text style={styles.resultCellValueHighlight}>
-                    {formatCurrency(extractedResult.monto, currency)}
-                  </Text>
-                </View>
-
-                <View style={styles.resultCell}>
-                  <Text style={styles.resultCellLabel}>Fecha</Text>
-                  <Text style={styles.resultCellValue}>{extractedResult.fechaISO}</Text>
-                </View>
-
-                <View style={styles.resultCell}>
-                  <Text style={styles.resultCellLabel}>
-                    {extractedResult.tipo === 'TARJETA' ? 'Tarjeta / Cuotas' : 'Cuenta'}
-                  </Text>
-                  <Text style={styles.resultCellValue} numberOfLines={1}>
-                    {extractedResult.tipo === 'TARJETA'
-                      ? `${
-                          creditCards.find((c) => c.id === extractedResult.tarjetaId)?.name ||
-                          'Tarjeta'
-                        } (${extractedResult.cuotas}x)`
-                      : accounts.find((a) => a.id === extractedResult.cuentaOrigenId)?.name ||
-                        'Cuenta principal'}
-                  </Text>
-                </View>
-
-                <View style={styles.resultCell}>
-                  <Text style={styles.resultCellLabel}>Categoría</Text>
-                  <Text style={styles.resultCellValue} numberOfLines={1}>
-                    {categories.find((c) => c.id === extractedResult.categoriaId)?.name ||
-                      'General'}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.resultButtonsRow}>
-                {onReviewInForm && (
-                  <TouchableOpacity
-                    style={styles.reviewBtn}
-                    onPress={() => {
-                      onClose();
-                      onReviewInForm(extractedResult);
-                    }}
+                  <Text
+                    style={[
+                      styles.savedTypePillText,
+                      { color: getBadgeColors(savedRecord.data.tipo).text },
+                    ]}
                   >
-                    <CustomIcon name="Edit3" size={16} color="#CBD5E1" />
-                    <Text style={styles.reviewBtnText}>Revisar en Formulario</Text>
-                  </TouchableOpacity>
-                )}
+                    {savedRecord.data.tipo}
+                  </Text>
+                </View>
+              </View>
 
+              {/* Resumen claro en una frase */}
+              <Text style={styles.savedSummaryText}>
+                {savedRecord.data.resumenHumano}
+              </Text>
+
+              {/* Grilla 2x2 con minWidth: 0 y truncate seguro */}
+              <View style={styles.savedGrid}>
+                <View style={styles.savedGridRow}>
+                  <View style={styles.savedGridCell}>
+                    <Text style={styles.savedCellLabel}>Monto</Text>
+                    <Text
+                      style={styles.savedCellAmountValue}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {formatCurrency(savedRecord.data.monto, currency)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.savedGridCell}>
+                    <Text style={styles.savedCellLabel}>Fecha</Text>
+                    <Text
+                      style={styles.savedCellValue}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {savedRecord.data.fechaISO}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.savedGridRow}>
+                  <View style={styles.savedGridCell}>
+                    <Text style={styles.savedCellLabel}>
+                      {savedRecord.data.tipo === 'TARJETA' ? 'Tarjeta' : 'Cuenta'}
+                    </Text>
+                    <Text
+                      style={styles.savedCellValue}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {savedRecord.data.tipo === 'TARJETA'
+                        ? `${
+                            creditCards.find((c) => c.id === savedRecord.data.tarjetaId)
+                              ?.name || 'Tarjeta'
+                          } (${savedRecord.data.cuotas}x)`
+                        : accounts.find((a) => a.id === savedRecord.data.cuentaOrigenId)
+                            ?.name || 'Cuenta Principal'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.savedGridCell}>
+                    <Text style={styles.savedCellLabel}>Categoría</Text>
+                    <Text
+                      style={styles.savedCellValue}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {categories.find((c) => c.id === savedRecord.data.categoriaId)
+                        ?.name || 'General'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Pie discreto con botón Deshacer */}
+              <View style={styles.savedCardFooter}>
+                <Text style={styles.autoCloseHintText}>
+                  Cerrando automáticamente...
+                </Text>
                 <TouchableOpacity
-                  style={styles.confirmSaveBtn}
-                  onPress={handleConfirmAndSave}
+                  style={styles.undoButton}
+                  onPress={handleUndoSaved}
                 >
-                  <CustomIcon name="Check" size={18} color="#FFFFFF" />
-                  <Text style={styles.confirmSaveBtnText}>Confirmar y Guardar</Text>
+                  <CustomIcon name="RotateCcw" size={13} color="#CBD5E1" />
+                  <Text style={styles.undoButtonText}>Deshacer</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Pressable>
           )}
-        </ScrollView>
+        </View>
 
-        {/* Banner Inferior: Visualizador de Onda de Voz en Movimiento con Gradiente + Glow */}
-        <View style={styles.waveFooter}>
+        {/* 3. Parte Inferior: Ondas de Voz Reactivas + Botón Push-to-Talk del Micrófono */}
+        <View style={styles.bottomWaveSection}>
           <View style={styles.waveBarsContainer}>
             {waveAnims.map((anim, idx) => (
               <Animated.View
@@ -581,7 +674,11 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
                   {
                     transform: [
                       {
-                        scaleY: isListening || isProcessing ? anim : 0.22,
+                        scaleY:
+                          (isListening || isSaving || isExternalHolding || isInternalHolding) &&
+                          !savedRecord
+                            ? anim
+                            : 0.2,
                       },
                     ],
                   },
@@ -597,16 +694,25 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
             ))}
           </View>
 
-          <TouchableOpacity
-            style={styles.micOrbButton}
-            onPress={() => {
-              if (transcript.trim().length > 0 && !extractedResult) {
-                handleAnalyzeWithGemini();
-              } else {
-                setIsListening(!isListening);
-                if (!isListening) startWebSpeechIfAvailable();
+          <Pressable
+            onPressIn={() => {
+              if (!savedRecord && !isSaving) {
+                setIsInternalHolding(true);
+                startSpeechRecognition();
               }
             }}
+            onPressOut={() => {
+              setIsInternalHolding(false);
+              if (transcriptRef.current.trim().length > 0 && !savedRecord && !isSaving) {
+                processAndAutoSave(transcriptRef.current);
+              }
+            }}
+            style={({ pressed }) => [
+              styles.micOrbButton,
+              (pressed || isExternalHolding || isInternalHolding) && {
+                transform: [{ scale: 1.12 }],
+              },
+            ]}
           >
             <LinearGradient
               colors={['#10B981', '#6366F1', '#06B6D4']}
@@ -615,327 +721,257 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
               style={styles.micOrbGradient}
             >
               <CustomIcon
-                name={transcript.trim().length > 0 && !extractedResult ? 'Sparkles' : 'Mic'}
-                size={26}
+                name={savedRecord ? 'Check' : 'Mic'}
+                size={28}
                 color="#FFFFFF"
               />
             </LinearGradient>
-          </TouchableOpacity>
+          </Pressable>
         </View>
-      </View>
-    </Modal>
+      </Pressable>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  overlayContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(11, 15, 25, 0.95)',
-    justifyContent: 'space-between',
-    paddingTop: Platform.OS === 'android' ? 44 : 54,
-    paddingBottom: 28,
-    paddingHorizontal: 18,
+  rootOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+    elevation: 9999,
   },
-  ambientOrb: {
+  backdropPressable: {
+    flex: 1,
+    backgroundColor: 'rgba(11, 15, 25, 0.94)',
+    justifyContent: 'space-between',
+    paddingTop: Platform.OS === 'android' ? 48 : 56,
+    paddingBottom: 34,
+    paddingHorizontal: 20,
+  },
+  hiddenVoiceReceiver: {
     position: 'absolute',
-    top: -90,
-    alignSelf: 'center',
-    width: 340,
-    height: 340,
-    borderRadius: 170,
-    overflow: 'hidden',
+    width: 1,
+    height: 1,
+    opacity: 0,
+    top: 0,
+    left: 0,
   },
-  topHeader: {
+  topMinimalBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
-    zIndex: 10,
+    width: '100%',
   },
-  aiStatusPill: {
+  topSpacer: {
+    width: 38,
+    height: 38,
+  },
+  minimalStatusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(22, 31, 48, 0.9)',
-    borderWidth: 1,
-    borderColor: '#26334D',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    flex: 1,
-    marginRight: 10,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  aiStatusText: {
-    color: '#CBD5E1',
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-  },
-  closeBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(38, 51, 77, 0.8)',
     justifyContent: 'center',
-    alignItems: 'center',
-  },
-  centerContent: {
-    paddingVertical: 10,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  listeningTag: {
-    color: '#34D399',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  heroTitle: {
-    color: '#F8FAFC',
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 14,
-  },
-  transcriptCard: {
-    backgroundColor: '#161F30',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#6366F1',
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 14,
-    elevation: 10,
-  },
-  transcriptInput: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-    minHeight: 76,
-    textAlignVertical: 'top',
-  },
-  transcriptActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
-  },
-  clearBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  clearBtnText: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  processNowBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#10B981',
-    paddingHorizontal: 16,
-    minHeight: 42,
-    borderRadius: 12,
-  },
-  processNowBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  examplesSection: {
-    gap: 8,
-  },
-  examplesHint: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  examplePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
     backgroundColor: 'rgba(22, 31, 48, 0.85)',
     borderWidth: 1,
     borderColor: '#26334D',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
   },
-  examplePillText: {
-    color: '#CBD5E1',
-    fontSize: 13,
-    fontStyle: 'italic',
+  pulsingDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  minimalStatusText: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  closeCornerBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(38, 51, 77, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  centerStage: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
   },
-  resultCard: {
-    backgroundColor: '#161F30',
+  floatingTranscriptWrap: {
+    width: '100%',
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  floatingLiveTranscript: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 34,
+  },
+  floatingGuidePlaceholder: {
+    color: '#94A3B8',
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 27,
+  },
+  savedCard: {
+    width: '100%',
+    maxWidth: 384,
+    alignSelf: 'center',
+    overflow: 'hidden',
+    padding: 20,
     borderRadius: 20,
+    backgroundColor: '#161F30',
     borderWidth: 1.5,
     borderColor: '#10B981',
-    padding: 16,
-    gap: 12,
+    gap: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 14,
   },
-  resultHeader: {
+  savedCardHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  resultBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  resultBadgeText: {
-    color: '#34D399',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  resultTypeTag: {
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
-    color: '#818CF8',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 8,
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  resultHumanSummary: {
-    color: '#F8FAFC',
-    fontSize: 16,
-    fontWeight: 'bold',
-    lineHeight: 22,
-  },
-  resultGrid: {
-    flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  resultCell: {
-    width: '48%',
+  savedCardTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  savedCardTitleText: {
+    color: '#34D399',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  savedTypePill: {
+    flexShrink: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  savedTypePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  savedSummaryText: {
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 22,
+  },
+  savedGrid: {
+    gap: 8,
+    width: '100%',
+  },
+  savedGridRow: {
+    flexDirection: 'row',
+    gap: 8,
+    width: '100%',
+  },
+  savedGridCell: {
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
     backgroundColor: '#0F172A',
-    padding: 10,
-    borderRadius: 10,
+    padding: 11,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#26334D',
   },
-  resultCellLabel: {
+  savedCellLabel: {
     color: '#94A3B8',
     fontSize: 13,
   },
-  resultCellValue: {
+  savedCellValue: {
     color: '#F8FAFC',
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginTop: 2,
   },
-  resultCellValueHighlight: {
+  savedCellAmountValue: {
     color: '#34D399',
     fontSize: 15,
-    fontWeight: 'bold',
+    fontWeight: '800',
     marginTop: 2,
   },
-  resultButtonsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  reviewBtn: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#26334D',
+  savedCardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
+    justifyContent: 'space-between',
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
-  reviewBtnText: {
+  autoCloseHintText: {
+    color: '#94A3B8',
+    fontSize: 13,
+  },
+  undoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#26334D',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  undoButtonText: {
     color: '#F8FAFC',
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
-  confirmSaveBtn: {
-    flex: 1.2,
-    minHeight: 48,
-    borderRadius: 12,
-    backgroundColor: '#10B981',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-  },
-  confirmSaveBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  waveFooter: {
+  bottomWaveSection: {
     alignItems: 'center',
     gap: 14,
-    paddingTop: 8,
   },
   waveBarsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 58,
+    height: 54,
     gap: 6,
   },
   waveBarWrapper: {
     width: 6,
-    height: 54,
+    height: 50,
     borderRadius: 3,
     overflow: 'hidden',
-    shadowColor: '#06B6D4',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.85,
-    shadowRadius: 8,
-    elevation: 6,
   },
   waveBarGradient: {
     flex: 1,
     borderRadius: 3,
   },
   micOrbButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 66,
+    height: 66,
+    borderRadius: 33,
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.6,
-    shadowRadius: 14,
-    elevation: 12,
+    shadowOpacity: 0.55,
+    shadowRadius: 12,
+    elevation: 10,
   },
   micOrbGradient: {
     flex: 1,
-    borderRadius: 32,
+    borderRadius: 33,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.35)',
   },
 });
-

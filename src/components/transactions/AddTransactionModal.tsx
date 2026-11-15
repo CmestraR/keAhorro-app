@@ -1138,6 +1138,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       <VoiceAssistantOverlay
         visible={voiceOverlayVisible}
         onClose={() => setVoiceOverlayVisible(false)}
+        onSavedSuccess={() => {
+          setVoiceOverlayVisible(false);
+          onClose();
+        }}
         onReviewInForm={(extracted) => {
           setVoiceOverlayVisible(false);
           applyAIExtractedTransaction(extracted);
