@@ -144,6 +144,72 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
           </View>
         </View>
 
+        {/* Estado Vacío / Onboarding para usuarios nuevos (sin cuentas ni movimientos) */}
+        {accounts.length === 0 && transactions.length === 0 && (
+          <View
+            style={[
+              styles.onboardingCard,
+              {
+                backgroundColor: colors.surfaceCard,
+                borderColor: alpha(colors.primary, 0.35),
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.onboardingIconWrap,
+                { backgroundColor: alpha(colors.success, 0.16) },
+              ]}
+            >
+              <CustomIcon name="Sparkles" size={26} color={colors.success} />
+            </View>
+            <Text style={[styles.onboardingTitle, { color: colors.textPrimary }]}>
+              ¡Bienvenido a keAhorro!
+            </Text>
+            <Text style={[styles.onboardingDesc, { color: colors.textSecondary }]}>
+              Organiza tus cuentas, tarjetas y gastos diarios en segundos con total privacidad. Da tu primer paso para empezar:
+            </Text>
+
+            <View style={styles.onboardingActionsCol}>
+              <TouchableOpacity
+                style={[
+                  styles.onboardingPrimaryBtn,
+                  { backgroundColor: colors.primary },
+                ]}
+                onPress={() => onNavigateToTab('accounts')}
+                activeOpacity={0.85}
+              >
+                <CustomIcon name="Plus" size={18} color="#FFFFFF" />
+                <Text style={styles.onboardingPrimaryBtnText}>
+                  Agregar mi primera cuenta
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.onboardingSecondaryBtn,
+                  {
+                    backgroundColor: colors.surfaceElevated,
+                    borderColor: colors.success,
+                  },
+                ]}
+                onPress={() => handleOpenAddWithPrefill()}
+                activeOpacity={0.85}
+              >
+                <CustomIcon name="ArrowUpRight" size={18} color={colors.success} />
+                <Text
+                  style={[
+                    styles.onboardingSecondaryBtnText,
+                    { color: colors.textPrimary },
+                  ]}
+                >
+                  Registrar mi primer movimiento
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Tarjeta de Saldo Disponible Consolidado */}
         <View
           style={[
@@ -778,5 +844,66 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 13,
+  },
+  onboardingCard: {
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  onboardingIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  onboardingTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  onboardingDesc: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  onboardingActionsCol: {
+    width: '100%',
+    gap: 10,
+  },
+  onboardingPrimaryBtn: {
+    minHeight: 48,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  onboardingPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  onboardingSecondaryBtn: {
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  onboardingSecondaryBtnText: {
+    fontSize: 15,
+    fontWeight: 'bold',
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   View,
@@ -6,6 +6,8 @@ import {
   ScrollView,
   Alert,
   Switch,
+  Animated,
+  Easing,
 } from 'react-native';
 import { Transaction, CardPurchase, TransactionType } from '../../types/finance';
 import { useFinancial } from '../../context/FinancialContext';
@@ -97,6 +99,39 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   const [isZeroInterestPromo, setIsZeroInterestPromo] = useState(false);
   const [alreadyPaidQuotas, setAlreadyPaidQuotas] = useState('0');
 
+  // Animación de píldora deslizante en Tabs y estado de botón Guardar
+  const [tabsBarWidth, setTabsBarWidth] = useState(0);
+  const tabSlideAnim = useRef(new Animated.Value(0)).current;
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const saveButtonScale = useRef(new Animated.Value(1)).current;
+
+  const tabOrder: Array<'expense' | 'card_purchase' | 'income' | 'transfer'> = [
+    'expense',
+    'card_purchase',
+    'income',
+    'transfer',
+  ];
+  const activeTabIndex = Math.max(0, tabOrder.indexOf(activeTab));
+
+  const activeTabColor =
+    activeTab === 'expense'
+      ? '#F43F5E'
+      : activeTab === 'card_purchase'
+      ? '#6366F1'
+      : activeTab === 'income'
+      ? '#10B981'
+      : '#3B82F6';
+
+  useEffect(() => {
+    Animated.spring(tabSlideAnim, {
+      toValue: activeTabIndex,
+      damping: 18,
+      stiffness: 180,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+  }, [activeTabIndex, tabSlideAnim]);
+
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
 
   useEffect(() => {
@@ -110,6 +145,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setSelectedDate(getTodayStr());
       setShowCustomDateInput(false);
       setActiveTab(defaultType);
+      setSaveState('idle');
       if (defaultCardId) {
         setSelectedCardId(defaultCardId);
       } else if (creditCards[0]?.id) {
@@ -200,9 +236,11 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     const nowIso = new Date().toISOString();
 
     try {
+      setSaveState('saving');
       if (activeTab === 'card_purchase') {
         // Compra con Tarjeta de Crédito
         if (!selectedCard) {
+          setSaveState('idle');
           showWarning('Tarjeta Requerida', 'Debes registrar al menos una tarjeta de crédito primero.');
           return;
         }
@@ -246,6 +284,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       } else if (activeTab === 'transfer') {
         // Transferencia entre cuentas (ej. Bancolombia a Nu)
         if (!selectedAccountId || !selectedToAccountId || selectedAccountId === selectedToAccountId) {
+          setSaveState('idle');
           showWarning('Cuentas Inválidas', 'Selecciona dos cuentas diferentes para la transferencia.');
           return;
         }
@@ -274,6 +313,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       } else {
         // Gasto normal o Ingreso
         if (!selectedAccountId) {
+          setSaveState('idle');
           showWarning('Cuenta Requerida', 'Debes seleccionar una cuenta de origen/destino.');
           return;
         }
@@ -297,6 +337,20 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         showSuccess('¡Movimiento Registrado!', `Tus finanzas se actualizaron con éxito${gmfNotice}.`);
       }
 
+      setSaveState('saved');
+      Animated.sequence([
+        Animated.timing(saveButtonScale, {
+          toValue: 0.96,
+          duration: 90,
+          useNativeDriver: true,
+        }),
+        Animated.spring(saveButtonScale, {
+          toValue: 1,
+          friction: 4,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
       // Reset
       setAmount('');
       setDescription('');
@@ -304,8 +358,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       setShowCustomDateInput(false);
       setNotes('');
       setIsZeroInterestPromo(false);
+      setSaveState('idle');
       onClose();
     } catch (e) {
+      setSaveState('idle');
       showError('Error', 'No se pudo guardar la transacción.');
     }
   };
@@ -325,55 +381,84 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           onPress={onClose}
         />
         <View style={styles.modalContainer}>
-          {/* Tabs Principales */}
-          <View style={styles.tabsContainer}>
+          {/* 1. Selector Superior Animado con Píldora Deslizante */}
+          <View
+            style={styles.tabsContainer}
+            onLayout={(e) => setTabsBarWidth(e.nativeEvent.layout.width - 8)}
+          >
+            {tabsBarWidth > 0 && (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.slidingPill,
+                  {
+                    width: tabsBarWidth / 4,
+                    backgroundColor: activeTabColor,
+                    transform: [
+                      {
+                        translateX: tabSlideAnim.interpolate({
+                          inputRange: [0, 1, 2, 3],
+                          outputRange: [
+                            0,
+                            tabsBarWidth / 4,
+                            (tabsBarWidth / 4) * 2,
+                            (tabsBarWidth / 4) * 3,
+                          ],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+            )}
+
             <TouchableOpacity
-              style={[styles.tab, activeTab === 'expense' && styles.tabExpense]}
+              style={styles.tab}
               onPress={() => {
                 setActiveTab('expense');
                 setSelectedCategoryId(categories.find((c) => c.type === 'expense')?.id || 'cat-food');
               }}
             >
-              <CustomIcon name="ArrowUpRight" size={14} color={activeTab === 'expense' ? '#FFFFFF' : '#94A3B8'} />
+              <CustomIcon name="ArrowUpRight" size={15} color={activeTab === 'expense' ? '#FFFFFF' : '#CBD5E1'} />
               <Text style={[styles.tabText, activeTab === 'expense' && styles.tabTextActive]}>Gasto</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tab, activeTab === 'card_purchase' && styles.tabCard]}
+              style={styles.tab}
               onPress={() => setActiveTab('card_purchase')}
             >
-              <CustomIcon name="CreditCard" size={14} color={activeTab === 'card_purchase' ? '#FFFFFF' : '#94A3B8'} />
+              <CustomIcon name="CreditCard" size={15} color={activeTab === 'card_purchase' ? '#FFFFFF' : '#CBD5E1'} />
               <Text style={[styles.tabText, activeTab === 'card_purchase' && styles.tabTextActive]}>Tarjeta</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tab, activeTab === 'income' && styles.tabIncome]}
+              style={styles.tab}
               onPress={() => {
                 setActiveTab('income');
                 setSelectedCategoryId(categories.find((c) => c.type === 'income')?.id || 'cat-salary');
               }}
             >
-              <CustomIcon name="ArrowDownLeft" size={14} color={activeTab === 'income' ? '#FFFFFF' : '#94A3B8'} />
+              <CustomIcon name="ArrowDownLeft" size={15} color={activeTab === 'income' ? '#FFFFFF' : '#CBD5E1'} />
               <Text style={[styles.tabText, activeTab === 'income' && styles.tabTextActive]}>Ingreso</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tab, activeTab === 'transfer' && styles.tabTransfer]}
+              style={styles.tab}
               onPress={() => setActiveTab('transfer')}
             >
-              <CustomIcon name="Repeat" size={12} color={activeTab === 'transfer' ? '#FFFFFF' : '#94A3B8'} />
+              <CustomIcon name="Repeat" size={14} color={activeTab === 'transfer' ? '#FFFFFF' : '#CBD5E1'} />
               <Text style={[styles.tabText, activeTab === 'transfer' && styles.tabTextActive]} numberOfLines={1}>Transferir</Text>
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Input de Monto Destacado con Formato Automático de Miles */}
-            <View style={styles.amountBox}>
-              <Text style={styles.currencySymbol}>{currency} $</Text>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {/* 2. Input de Monto Protagonista y Legible (32px, 700, tabular-nums, foco inmediato) */}
+            <View style={[styles.amountBox, { borderColor: activeTabColor }]}>
+              <Text style={[styles.currencySymbol, { color: activeTabColor }]}>{currency} $</Text>
               <TextInput
                 style={styles.amountInput}
                 placeholder="0"
-                placeholderTextColor="#475569"
+                placeholderTextColor="#94A3B8"
                 keyboardType="numeric"
                 value={amount}
                 onChangeText={(text) => setAmount(formatInputNumber(text))}
@@ -386,7 +471,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             <TextInput
               style={styles.input}
               placeholder="ej. Almuerzo, Uber, Supermercado, Pago Nómina"
-              placeholderTextColor="#64748B"
+              placeholderTextColor="#94A3B8"
               value={description}
               onChangeText={(text) => {
                 setDescription(text);
@@ -397,34 +482,29 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               }}
             />
 
-            {/* Selector de Fecha del Movimiento */}
+            {/* 3. Simplificación de "Fecha del Movimiento" (3 botones amplios sin cortarse jamás) */}
             <View style={styles.dateSelectorContainer}>
-              <View style={styles.dateHeaderRow}>
-                <Text style={styles.fieldLabel}>Fecha del Movimiento</Text>
-                <View style={styles.dateActiveBadge}>
-                  <CustomIcon name="Calendar" size={12} color="#818CF8" />
-                  <Text style={styles.dateActiveBadgeText}>
-                    {getFormattedDateLabel(selectedDate)}
-                  </Text>
-                </View>
-              </View>
+              <Text style={styles.fieldLabel}>Fecha del Movimiento</Text>
 
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.dateChipsScroll}
-                contentContainerStyle={styles.dateChipsContent}
-              >
+              <View style={styles.dateRowFixed}>
                 <TouchableOpacity
                   style={[
-                    styles.dateChip,
-                    selectedDate === getTodayStr() && !showCustomDateInput && styles.dateChipActive,
+                    styles.dateChipFixed,
+                    selectedDate === getTodayStr() && !showCustomDateInput && [
+                      styles.dateChipActive,
+                      { backgroundColor: activeTabColor, borderColor: activeTabColor },
+                    ],
                   ]}
                   onPress={() => {
                     setSelectedDate(getTodayStr());
                     setShowCustomDateInput(false);
                   }}
                 >
+                  <CustomIcon
+                    name="Calendar"
+                    size={15}
+                    color={selectedDate === getTodayStr() && !showCustomDateInput ? '#FFFFFF' : '#CBD5E1'}
+                  />
                   <Text
                     style={[
                       styles.dateChipText,
@@ -437,8 +517,11 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
                 <TouchableOpacity
                   style={[
-                    styles.dateChip,
-                    selectedDate === getYesterdayStr() && !showCustomDateInput && styles.dateChipActive,
+                    styles.dateChipFixed,
+                    selectedDate === getYesterdayStr() && !showCustomDateInput && [
+                      styles.dateChipActive,
+                      { backgroundColor: activeTabColor, borderColor: activeTabColor },
+                    ],
                   ]}
                   onPress={() => {
                     setSelectedDate(getYesterdayStr());
@@ -457,62 +540,41 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
                 <TouchableOpacity
                   style={[
-                    styles.dateChip,
-                    selectedDate === getDaysAgoStr(2) && !showCustomDateInput && styles.dateChipActive,
-                  ]}
-                  onPress={() => {
-                    setSelectedDate(getDaysAgoStr(2));
-                    setShowCustomDateInput(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.dateChipText,
-                      selectedDate === getDaysAgoStr(2) && !showCustomDateInput && styles.dateChipTextActive,
-                    ]}
-                  >
-                    Hace 2 días
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.dateChip,
-                    selectedDate === getDaysAgoStr(3) && !showCustomDateInput && styles.dateChipActive,
-                  ]}
-                  onPress={() => {
-                    setSelectedDate(getDaysAgoStr(3));
-                    setShowCustomDateInput(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.dateChipText,
-                      selectedDate === getDaysAgoStr(3) && !showCustomDateInput && styles.dateChipTextActive,
-                    ]}
-                  >
-                    Hace 3 días
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.dateChip,
-                    showCustomDateInput && styles.dateChipActive,
+                    styles.dateChipFixed,
+                    styles.dateChipCustomBtn,
+                    (showCustomDateInput ||
+                      (selectedDate !== getTodayStr() && selectedDate !== getYesterdayStr())) && [
+                      styles.dateChipActive,
+                      { backgroundColor: activeTabColor, borderColor: activeTabColor },
+                    ],
                   ]}
                   onPress={() => setShowCustomDateInput(!showCustomDateInput)}
                 >
-                  <CustomIcon name="CalendarDays" size={13} color={showCustomDateInput ? '#FFFFFF' : '#94A3B8'} />
+                  <CustomIcon
+                    name="CalendarDays"
+                    size={15}
+                    color={
+                      showCustomDateInput ||
+                      (selectedDate !== getTodayStr() && selectedDate !== getYesterdayStr())
+                        ? '#FFFFFF'
+                        : '#CBD5E1'
+                    }
+                  />
                   <Text
                     style={[
                       styles.dateChipText,
-                      showCustomDateInput && styles.dateChipTextActive,
+                      (showCustomDateInput ||
+                        (selectedDate !== getTodayStr() && selectedDate !== getYesterdayStr())) &&
+                        styles.dateChipTextActive,
                     ]}
+                    numberOfLines={1}
                   >
-                    Otra Fecha
+                    {selectedDate !== getTodayStr() && selectedDate !== getYesterdayStr()
+                      ? getFormattedDateLabel(selectedDate)
+                      : 'Elegir fecha...'}
                   </Text>
                 </TouchableOpacity>
-              </ScrollView>
+              </View>
 
               {showCustomDateInput && (
                 <View style={styles.customDateBox}>
@@ -520,7 +582,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                   <TextInput
                     style={styles.customDateInput}
                     placeholder="2026-08-20"
-                    placeholderTextColor="#64748B"
+                    placeholderTextColor="#94A3B8"
                     value={selectedDate}
                     onChangeText={setSelectedDate}
                     maxLength={10}
@@ -529,46 +591,117 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               )}
             </View>
 
-            {/* Configuración Específica de Tarjeta de Crédito */}
+            {/* 4A. Configuración Específica de Tarjeta de Crédito (Grilla sin textos cortados + Stepper de Cuotas) */}
             {activeTab === 'card_purchase' && (
               <View style={styles.cardSettingsBlock}>
                 <Text style={styles.fieldLabel}>Seleccionar Tarjeta de Crédito</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cardsRow}>
+                <View style={styles.selectorGrid}>
                   {creditCards.map((c) => {
                     const isSelected = c.id === (selectedCard?.id || selectedCardId);
                     return (
                       <TouchableOpacity
                         key={c.id}
-                        style={[styles.cardSelectChip, isSelected && styles.cardSelectChipActive]}
+                        style={[
+                          styles.gridSelectorCard,
+                          creditCards.length === 1 && { width: '100%' },
+                          isSelected && styles.cardSelectChipActive,
+                        ]}
                         onPress={() => setSelectedCardId(c.id)}
                       >
-                        <CustomIcon name="CreditCard" size={14} color={isSelected ? '#FFFFFF' : '#94A3B8'} />
-                        <Text style={[styles.cardChipText, isSelected && styles.cardChipTextActive]}>
-                          {c.name}
-                        </Text>
-                        <Text style={styles.cardChipSub}>
-                          (Disp: {formatCurrency(c.availableLimit, currency)})
+                        <View style={styles.gridSelectorHeader}>
+                          <CustomIcon
+                            name="CreditCard"
+                            size={16}
+                            color={isSelected ? '#FFFFFF' : '#818CF8'}
+                          />
+                          <Text
+                            style={[styles.cardChipText, isSelected && styles.cardChipTextActive]}
+                            numberOfLines={1}
+                          >
+                            {c.name}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.cardChipSub,
+                            isSelected && { color: 'rgba(255,255,255,0.9)' },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          Disp: {formatCurrency(c.availableLimit, currency)}
                         </Text>
                       </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
+                </View>
 
-                {/* Selector de Cuotas */}
-                <Text style={styles.fieldLabel}>Número de Cuotas ({installments} cuotas)</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quotaRow}>
-                  {[1, 2, 3, 6, 9, 12, 18, 24, 36].map((q) => (
-                    <TouchableOpacity
-                      key={q}
-                      style={[styles.quotaChip, parsedInstallments === q && styles.quotaChipSelected]}
-                      onPress={() => setInstallments(q.toString())}
-                    >
-                      <Text style={[styles.quotaChipText, parsedInstallments === q && styles.quotaChipTextSelected]}>
-                        {q === 1 ? '1 Cuota (0% Interés)' : `${q}x`}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
+                {/* Control Stepper Numérico Grande y Accesible de Cuotas */}
+                <Text style={styles.fieldLabel}>Número de Cuotas</Text>
+                <View style={styles.stepperContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.stepperBtn,
+                      parsedInstallments <= 1 && styles.stepperBtnDisabled,
+                    ]}
+                    onPress={() => {
+                      const next = Math.max(1, parsedInstallments - 1);
+                      setInstallments(next.toString());
+                    }}
+                    disabled={parsedInstallments <= 1}
+                  >
+                    <Text style={styles.stepperBtnSymbol}>−</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.stepperDisplay}>
+                    <Text style={styles.stepperMainText}>
+                      {parsedInstallments === 1
+                        ? '1 Cuota (0% Interés)'
+                        : `${parsedInstallments} Cuotas`}
+                    </Text>
+                    <Text style={styles.stepperSubText}>
+                      {parsedInstallments === 1 || isZeroInterestPromo
+                        ? 'Sin intereses corrientes'
+                        : `Tasa aplicable: ${effectiveMonthlyRate}% E.M.`}
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.stepperBtn,
+                      parsedInstallments >= 48 && styles.stepperBtnDisabled,
+                    ]}
+                    onPress={() => {
+                      const next = Math.min(48, parsedInstallments + 1);
+                      setInstallments(next.toString());
+                    }}
+                    disabled={parsedInstallments >= 48}
+                  >
+                    <Text style={styles.stepperBtnSymbol}>+</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* 4 Accesos Rápidos que caben al 100% sin desbordarse */}
+                <View style={styles.quickQuotaRow}>
+                  {[1, 3, 6, 12].map((q) => {
+                    const isSelected = parsedInstallments === q;
+                    return (
+                      <TouchableOpacity
+                        key={q}
+                        style={[styles.quickQuotaChip, isSelected && styles.quotaChipSelected]}
+                        onPress={() => setInstallments(q.toString())}
+                      >
+                        <Text
+                          style={[
+                            styles.quotaChipText,
+                            isSelected && styles.quotaChipTextSelected,
+                          ]}
+                        >
+                          {q}x
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
 
                 {/* Switch de Promoción 0% Interés para múltiples cuotas */}
                 {parsedInstallments > 1 && (
@@ -590,7 +723,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 {parsedInstallments > 1 && (
                   <View style={styles.historicalQuotasBox}>
                     <View style={styles.historicalHeader}>
-                      <CustomIcon name="Clock" size={13} color="#818CF8" />
+                      <CustomIcon name="Clock" size={14} color="#818CF8" />
                       <Text style={styles.historicalTitle}>¿Has pagado cuotas de esta compra antes?</Text>
                     </View>
                     <Text style={styles.historicalSub}>
@@ -616,7 +749,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
                     {(parseInt(alreadyPaidQuotas, 10) || 0) > 0 && (
                       <View style={styles.historicalFeedback}>
-                        <CustomIcon name="CheckCircle2" size={13} color="#34D399" />
+                        <CustomIcon name="CheckCircle2" size={14} color="#34D399" />
                         <Text style={styles.historicalFeedbackText}>
                           Se registrarán {alreadyPaidQuotas} cuota(s) como ya pagadas. Quedarán {parsedInstallments - (parseInt(alreadyPaidQuotas, 10) || 0)} cuotas pendientes.
                         </Text>
@@ -667,13 +800,13 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               </View>
             )}
 
-            {/* Selector de Cuentas para Gasto / Ingreso / Transferencia */}
+            {/* 4B. Selector de Cuentas en Grilla de 2 Columnas Sin Textos Cortados */}
             {activeTab !== 'card_purchase' && (
               <View>
                 <Text style={styles.fieldLabel}>
                   {activeTab === 'income' ? 'Depositar en Cuenta' : activeTab === 'transfer' ? 'Cuenta Origen (Sale dinero)' : 'Pagar con la Cuenta'}
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.accountsRow}>
+                <View style={styles.selectorGrid}>
                   {accounts.map((acc) => {
                     const isSelected = acc.id === selectedAccountId;
                     const isDebtAcc = acc.type === 'debt';
@@ -681,8 +814,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                       <TouchableOpacity
                         key={acc.id}
                         style={[
-                          styles.accountChip,
-                          isSelected && (isDebtAcc ? styles.debtAccountChipSelected : styles.accountChipSelected),
+                          styles.gridSelectorCard,
+                          accounts.length === 1 && { width: '100%' },
+                          isSelected && (isDebtAcc ? styles.debtAccountChipSelected : [styles.accountChipSelected, { backgroundColor: activeTabColor, borderColor: activeTabColor }]),
                           isDebtAcc && !isSelected && styles.debtAccountChip,
                         ]}
                         onPress={() => {
@@ -690,24 +824,37 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                           if (isDebtAcc) setApplyGmf(false);
                         }}
                       >
-                        <CustomIcon
-                          name={acc.icon || (isDebtAcc ? 'Receipt' : 'Landmark')}
-                          size={13}
-                          color={isSelected ? '#FFFFFF' : isDebtAcc ? '#F87171' : '#94A3B8'}
-                        />
+                        <View style={styles.gridSelectorHeader}>
+                          <CustomIcon
+                            name={acc.icon || (isDebtAcc ? 'Receipt' : 'Landmark')}
+                            size={15}
+                            color={isSelected ? '#FFFFFF' : isDebtAcc ? '#F87171' : '#CBD5E1'}
+                          />
+                          <Text
+                            style={[
+                              styles.accountChipText,
+                              isSelected && styles.accountChipTextSelected,
+                              isDebtAcc && !isSelected && { color: '#F87171' },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {acc.name} {isDebtAcc ? '(Deuda)' : ''}
+                          </Text>
+                        </View>
                         <Text
                           style={[
-                            styles.accountChipText,
-                            isSelected && styles.accountChipTextSelected,
-                            isDebtAcc && !isSelected && { color: '#F87171' },
+                            styles.cardChipSub,
+                            isSelected && { color: 'rgba(255,255,255,0.9)' },
                           ]}
+                          numberOfLines={1}
                         >
-                          {acc.name} {isDebtAcc ? '(Deuda)' : ''}
+                          {isDebtAcc ? 'Deuda: ' : 'Saldo: '}
+                          {formatCurrency(acc.balance, currency)}
                         </Text>
                       </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
+                </View>
 
                 {/* Mensaje de cuenta de deuda */}
                 {selectedAccount?.type === 'debt' && (
@@ -720,29 +867,47 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 )}
 
                 {activeTab === 'transfer' && (
-                  <View style={{ marginTop: 8 }}>
+                  <View style={{ marginTop: 10 }}>
                     <Text style={styles.fieldLabel}>Cuenta Destino (Recibe dinero ej. Nu, Nequi, etc.)</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.accountsRow}>
+                    <View style={styles.selectorGrid}>
                       {accounts.map((acc) => {
                         const isSelected = acc.id === selectedToAccountId;
                         return (
                           <TouchableOpacity
                             key={acc.id}
-                            style={[styles.accountChip, isSelected && styles.accountChipSelected]}
+                            style={[
+                              styles.gridSelectorCard,
+                              accounts.length === 1 && { width: '100%' },
+                              isSelected && [styles.accountChipSelected, { backgroundColor: activeTabColor, borderColor: activeTabColor }],
+                            ]}
                             onPress={() => setSelectedToAccountId(acc.id)}
                           >
-                            <CustomIcon
-                              name={acc.icon || 'Landmark'}
-                              size={13}
-                              color={isSelected ? '#FFFFFF' : '#94A3B8'}
-                            />
-                            <Text style={[styles.accountChipText, isSelected && styles.accountChipTextSelected]}>
-                              {acc.name}
+                            <View style={styles.gridSelectorHeader}>
+                              <CustomIcon
+                                name={acc.icon || 'Landmark'}
+                                size={15}
+                                color={isSelected ? '#FFFFFF' : '#CBD5E1'}
+                              />
+                              <Text
+                                style={[styles.accountChipText, isSelected && styles.accountChipTextSelected]}
+                                numberOfLines={1}
+                              >
+                                {acc.name}
+                              </Text>
+                            </View>
+                            <Text
+                              style={[
+                                styles.cardChipSub,
+                                isSelected && { color: 'rgba(255,255,255,0.9)' },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              Saldo: {formatCurrency(acc.balance, currency)}
                             </Text>
                           </TouchableOpacity>
                         );
                       })}
-                    </ScrollView>
+                    </View>
                   </View>
                 )}
 
@@ -801,11 +966,11 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               </View>
             )}
 
-            {/* Selector de Categorías (para gastos, compras y sueldos) */}
+            {/* Selector de Categorías (Grilla Envolvente sin textos cortados) */}
             {activeTab !== 'transfer' && (
               <View style={styles.categoriesSection}>
                 <Text style={styles.fieldLabel}>Categoría</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesRow}>
+                <View style={styles.categoriesWrapGrid}>
                   {filteredCategories.map((cat) => {
                     const isSelected = cat.id === selectedCategoryId;
                     return (
@@ -819,7 +984,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                       >
                         <CustomIcon
                           name={cat.icon}
-                          size={14}
+                          size={15}
                           color={isSelected ? '#FFFFFF' : cat.color}
                         />
                         <Text style={[styles.catChipText, isSelected && styles.catChipTextSelected]}>
@@ -828,7 +993,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                       </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
+                </View>
               </View>
             )}
 
@@ -837,15 +1002,48 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             <TextInput
               style={styles.input}
               placeholder="Detalles, número de comprobante..."
-              placeholderTextColor="#64748B"
+              placeholderTextColor="#94A3B8"
               value={notes}
               onChangeText={setNotes}
             />
 
-            {/* Botón Guardar */}
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-              <Text style={styles.saveBtnText}>Registrar Movimiento</Text>
-            </TouchableOpacity>
+            {/* Botón Guardar con Claridad Contextual y Feedback de Guardado */}
+            <Animated.View style={{ transform: [{ scale: saveButtonScale }] }}>
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: activeTabColor }]}
+                onPress={handleSave}
+                disabled={saveState === 'saving'}
+              >
+                <CustomIcon
+                  name={
+                    saveState === 'saved'
+                      ? 'CheckCircle2'
+                      : activeTab === 'expense'
+                      ? 'ArrowUpRight'
+                      : activeTab === 'card_purchase'
+                      ? 'CreditCard'
+                      : activeTab === 'income'
+                      ? 'ArrowDownLeft'
+                      : 'Repeat'
+                  }
+                  size={18}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.saveBtnText}>
+                  {saveState === 'saving'
+                    ? 'Guardando movimiento...'
+                    : saveState === 'saved'
+                    ? '¡Movimiento Registrado!'
+                    : activeTab === 'expense'
+                    ? 'Registrar Gasto'
+                    : activeTab === 'card_purchase'
+                    ? 'Registrar Compra con Tarjeta'
+                    : activeTab === 'income'
+                    ? 'Registrar Ingreso'
+                    : 'Registrar Transferencia'}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
           </ScrollView>
         </View>
       </View>
@@ -868,45 +1066,43 @@ const styles = StyleSheet.create({
     borderTopRightRadius: Theme.borderRadius.xl,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
-    paddingTop: 20,
-    paddingHorizontal: 20,
-    paddingBottom: 45, // Evita que se filtre contenido bajo la barra de gestos
+    paddingTop: 18,
+    paddingHorizontal: 18,
+    paddingBottom: 42,
     maxHeight: '92%',
     marginBottom: 0,
   },
   tabsContainer: {
+    position: 'relative',
     flexDirection: 'row',
     backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 14,
-    padding: 3,
+    padding: 4,
     marginBottom: 16,
-    gap: 2,
+    borderWidth: 1,
+    borderColor: '#26334D',
+  },
+  slidingPill: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 10,
   },
   tab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 2,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
     borderRadius: 10,
-    gap: 2,
-  },
-  tabExpense: {
-    backgroundColor: '#EF4444',
-  },
-  tabCard: {
-    backgroundColor: '#6366F1',
-  },
-  tabIncome: {
-    backgroundColor: '#10B981',
-  },
-  tabTransfer: {
-    backgroundColor: '#3B82F6',
+    gap: 4,
+    zIndex: 2,
   },
   tabText: {
-    color: '#94A3B8',
-    fontSize: 11,
+    color: '#CBD5E1',
+    fontSize: 13,
     fontWeight: '600',
   },
   tabTextActive: {
@@ -918,36 +1114,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Theme.colors.surfaceElevated,
     borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     marginBottom: 14,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#334155',
   },
   currencySymbol: {
-    color: '#94A3B8',
-    fontSize: 20,
-    fontWeight: '700',
-    marginRight: 8,
+    color: '#CBD5E1',
+    fontSize: 22,
+    fontWeight: '800',
+    marginRight: 10,
   },
   amountInput: {
     flex: 1,
     color: '#FFFFFF',
-    fontSize: 26,
-    fontWeight: 'bold',
+    fontSize: 32,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    paddingVertical: 2,
   },
   fieldLabel: {
     color: '#CBD5E1',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 6,
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
     marginTop: 10,
   },
   input: {
     backgroundColor: Theme.colors.surfaceElevated,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     color: '#FFFFFF',
     fontSize: 14,
     borderWidth: 1,
@@ -956,62 +1154,118 @@ const styles = StyleSheet.create({
   },
   cardSettingsBlock: {
     backgroundColor: Theme.colors.surfaceCard,
-    padding: 12,
-    borderRadius: 14,
+    padding: 14,
+    borderRadius: 16,
     marginVertical: 8,
+    borderWidth: 1,
+    borderColor: '#26334D',
   },
-  cardsRow: {
+  selectorGrid: {
     flexDirection: 'row',
-    marginBottom: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 8,
   },
-  cardSelectChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  gridSelectorCard: {
+    width: '48.5%',
     backgroundColor: Theme.colors.surfaceElevated,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginRight: 8,
-    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#334155',
+    gap: 4,
+  },
+  gridSelectorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   cardSelectChipActive: {
     backgroundColor: Theme.colors.primary,
     borderColor: '#818CF8',
   },
   cardChipText: {
-    color: '#94A3B8',
-    fontSize: 12,
+    color: '#F8FAFC',
+    fontSize: 13,
     fontWeight: 'bold',
+    flex: 1,
   },
   cardChipTextActive: {
     color: '#FFFFFF',
   },
   cardChipSub: {
     color: '#CBD5E1',
-    fontSize: 11,
+    fontSize: 13,
+    fontWeight: '500',
   },
-  quotaRow: {
+  stepperContainer: {
     flexDirection: 'row',
-    marginBottom: 10,
-  },
-  quotaChip: {
-    backgroundColor: Theme.colors.surfaceElevated,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    marginRight: 6,
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 6,
     borderWidth: 1,
     borderColor: '#334155',
+    marginBottom: 10,
+  },
+  stepperBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 11,
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: '#475569',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepperBtnDisabled: {
+    opacity: 0.4,
+  },
+  stepperBtnSymbol: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  stepperDisplay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  stepperMainText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  stepperSubText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  quickQuotaRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  quickQuotaChip: {
+    flex: 1,
+    minHeight: 42,
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   quotaChipSelected: {
     backgroundColor: Theme.colors.primary,
     borderColor: '#818CF8',
   },
   quotaChipText: {
-    color: '#94A3B8',
-    fontSize: 11,
+    color: '#CBD5E1',
+    fontSize: 13,
     fontWeight: 'bold',
   },
   quotaChipTextSelected: {
@@ -1021,23 +1275,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Theme.colors.surfaceElevated,
-    padding: 10,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 12,
     marginBottom: 10,
   },
   promoTitle: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   promoSub: {
-    color: '#94A3B8',
-    fontSize: 10,
+    color: '#CBD5E1',
+    fontSize: 13,
   },
   historicalQuotasBox: {
     backgroundColor: '#0F172A',
     borderRadius: 12,
-    padding: 10,
+    padding: 12,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: '#334155',
@@ -1046,16 +1300,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 2,
+    marginBottom: 4,
   },
   historicalTitle: {
-    color: '#CBD5E1',
-    fontSize: 11,
+    color: '#F8FAFC',
+    fontSize: 13,
     fontWeight: '700',
   },
   historicalSub: {
-    color: '#64748B',
-    fontSize: 10,
+    color: '#CBD5E1',
+    fontSize: 13,
     marginBottom: 8,
   },
   historicalRow: {
@@ -1064,10 +1318,10 @@ const styles = StyleSheet.create({
   },
   paidChip: {
     backgroundColor: '#1E293B',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    marginRight: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginRight: 8,
     borderWidth: 1,
     borderColor: '#334155',
   },
@@ -1076,8 +1330,8 @@ const styles = StyleSheet.create({
     borderColor: '#818CF8',
   },
   paidChipText: {
-    color: '#94A3B8',
-    fontSize: 11,
+    color: '#CBD5E1',
+    fontSize: 13,
     fontWeight: '600',
   },
   paidChipTextSelected: {
@@ -1089,13 +1343,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    padding: 6,
+    padding: 8,
     borderRadius: 8,
     marginTop: 6,
   },
   historicalFeedbackText: {
     color: '#6EE7B7',
-    fontSize: 10,
+    fontSize: 13,
     flex: 1,
   },
   installmentCalculatorBox: {
@@ -1114,13 +1368,13 @@ const styles = StyleSheet.create({
   },
   calcTitle: {
     color: '#F59E0B',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
     flex: 1,
   },
   calcRate: {
-    color: '#94A3B8',
-    fontSize: 11,
+    color: '#CBD5E1',
+    fontSize: 13,
   },
   calcRow: {
     flexDirection: 'row',
@@ -1129,125 +1383,90 @@ const styles = StyleSheet.create({
   },
   calcLabel: {
     color: '#CBD5E1',
-    fontSize: 12,
+    fontSize: 13,
   },
   calcValue: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   calcValueHighlight: {
     color: '#34D399',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
-  },
-  accountsRow: {
-    flexDirection: 'row',
-    marginBottom: 6,
-  },
-  accountChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.surfaceElevated,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-    marginRight: 8,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: '#334155',
   },
   accountChipSelected: {
     backgroundColor: Theme.colors.primary,
     borderColor: '#818CF8',
   },
   accountChipText: {
-    color: '#94A3B8',
-    fontSize: 12,
-    fontWeight: '600',
+    color: '#F8FAFC',
+    fontSize: 13,
+    fontWeight: 'bold',
+    flex: 1,
   },
   accountChipTextSelected: {
     color: '#FFFFFF',
   },
-  categoriesSection: {},
-  categoriesRow: {
+  categoriesSection: {
+    marginTop: 4,
+  },
+  categoriesWrapGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
     marginBottom: 8,
   },
   catChip: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Theme.colors.surfaceElevated,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 14,
+    minHeight: 40,
     borderRadius: 20,
-    marginRight: 8,
     gap: 6,
     borderWidth: 1,
     borderColor: '#334155',
   },
   catChipText: {
     color: '#CBD5E1',
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
   },
   catChipTextSelected: {
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
   dateSelectorContainer: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  dateHeaderRow: {
+  dateRowFixed: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
+    gap: 8,
   },
-  dateActiveBadge: {
+  dateChipFixed: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
-  },
-  dateActiveBadgeText: {
-    color: '#818CF8',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  dateChipsScroll: {
-    flexGrow: 0,
-    height: 36,
-  },
-  dateChipsContent: {
-    alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
-  },
-  dateChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
     backgroundColor: '#1E293B',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    minHeight: 44,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#334155',
-    height: 30,
-    justifyContent: 'center',
+  },
+  dateChipCustomBtn: {
+    flex: 1.35,
   },
   dateChipActive: {
     backgroundColor: '#6366F1',
     borderColor: '#818CF8',
   },
   dateChipText: {
-    color: '#94A3B8',
-    fontSize: 11.5,
+    color: '#CBD5E1',
+    fontSize: 13,
     fontWeight: '600',
   },
   dateChipTextActive: {
@@ -1256,24 +1475,24 @@ const styles = StyleSheet.create({
   },
   customDateBox: {
     backgroundColor: '#0F172A',
-    borderRadius: 10,
-    padding: 10,
+    borderRadius: 12,
+    padding: 12,
     marginTop: 8,
     borderWidth: 1,
     borderColor: '#334155',
   },
   customDateHelp: {
-    color: '#94A3B8',
-    fontSize: 11,
+    color: '#CBD5E1',
+    fontSize: 13,
     marginBottom: 6,
   },
   customDateInput: {
     backgroundColor: '#1E293B',
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     borderWidth: 1,
     borderColor: '#475569',
   },
@@ -1296,25 +1515,25 @@ const styles = StyleSheet.create({
   },
   gmfTitle: {
     color: '#FFFFFF',
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   gmfSubtitle: {
-    color: '#94A3B8',
-    fontSize: 10.5,
+    color: '#CBD5E1',
+    fontSize: 13,
     marginTop: 2,
   },
   gmfTag: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 4,
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.4)',
   },
   gmfTagText: {
     color: '#F87171',
-    fontSize: 9.5,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   gmfBreakdownBox: {
@@ -1331,12 +1550,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   gmfRowLabel: {
-    color: '#94A3B8',
-    fontSize: 11.5,
+    color: '#CBD5E1',
+    fontSize: 13,
   },
   gmfRowVal: {
     color: '#FFFFFF',
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '600',
   },
   gmfTotalRow: {
@@ -1348,25 +1567,30 @@ const styles = StyleSheet.create({
   },
   gmfTotalLabel: {
     color: '#CBD5E1',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   gmfTotalVal: {
     color: '#34D399',
-    fontSize: 12.5,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   saveBtn: {
     backgroundColor: Theme.colors.primary,
+    minHeight: 52,
     paddingVertical: 14,
-    borderRadius: 12,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 14,
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
     marginBottom: 16,
   },
   saveBtnText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   debtAccountChip: {
@@ -1391,7 +1615,7 @@ const styles = StyleSheet.create({
   },
   debtExpenseNoticeText: {
     color: '#FCA5A5',
-    fontSize: 11.5,
+    fontSize: 13,
     flex: 1,
   },
 });
