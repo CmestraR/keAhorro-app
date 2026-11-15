@@ -1,20 +1,18 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   RefreshControl,
-  SafeAreaView,
-  StatusBar,
 } from 'react-native';
 import { useFinancial } from '../context/FinancialContext';
+import { useAppTheme } from '../context/ThemeContext';
 import { formatCurrency } from '../utils/formatters';
-import { Theme } from '../components/common/Theme';
+import { Layout, alpha } from '../components/common/Theme';
 import { CustomIcon } from '../components/common/CustomIcon';
+import { Text } from '../components/common/AppText';
+import { TouchableOpacity } from '../components/common/Touchable';
 import { CreditCardVisual, CARD_WIDTH } from '../components/cards/CreditCardVisual';
-import { AccountCard } from '../components/accounts/AccountCard';
 import { AccountMiniCard, MINI_CARD_WIDTH } from '../components/accounts/AccountMiniCard';
 import { TransactionItem } from '../components/transactions/TransactionItem';
 import { CardStatementModal } from '../components/cards/CardStatementModal';
@@ -48,6 +46,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
     isBalanceHidden,
     toggleHideBalance,
   } = useFinancial();
+  const { colors, isDark, toggleMode } = useAppTheme();
 
   const [refreshing, setRefreshing] = useState(false);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
@@ -97,63 +96,98 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
   const recentTransactions = transactions.slice(0, 4);
 
   return (
-    <View style={styles.safeArea}>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <ScrollView
         style={styles.container}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366F1" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
-        {/* Header Superior: marca, captura rápida (ícono con badge), ocultar saldo & ajustes */}
+        {/* Header Superior: marca, captura rápida, tema claro/oscuro, ocultar saldo & ajustes */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.appName}>keAhorro</Text>
-            <Text style={styles.greeting}>keAhorro | Control Financiero</Text>
+            <Text style={[styles.appName, { color: colors.textPrimary }]}>keAhorro</Text>
+            <Text style={[styles.greeting, { color: colors.textMuted }]}>Control Financiero</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <QuickIslandBar variant="icon" onOpenAddModal={(data) => handleOpenAddWithPrefill(data)} />
-            <TouchableOpacity style={styles.settingsHeaderBtn} onPress={toggleHideBalance}>
-              <CustomIcon name={isBalanceHidden ? 'EyeOff' : 'Eye'} size={20} color="#CBD5E1" />
+            <TouchableOpacity
+              style={[
+                styles.settingsHeaderBtn,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+              ]}
+              onPress={toggleMode}
+            >
+              <CustomIcon
+                name={isDark ? 'Sun' : 'Moon'}
+                size={20}
+                color={isDark ? colors.warningLight : colors.primary}
+              />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.settingsHeaderBtn} onPress={() => onNavigateToTab('settings')}>
-              <CustomIcon name="Settings" size={20} color="#CBD5E1" />
+            <TouchableOpacity
+              style={[
+                styles.settingsHeaderBtn,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+              ]}
+              onPress={toggleHideBalance}
+            >
+              <CustomIcon name={isBalanceHidden ? 'EyeOff' : 'Eye'} size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.settingsHeaderBtn,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+              ]}
+              onPress={() => onNavigateToTab('settings')}
+            >
+              <CustomIcon name="Settings" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Tarjeta de Saldo Disponible Consolidado */}
-        <View style={styles.netWorthCard}>
+        <View
+          style={[
+            styles.netWorthCard,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
           <View style={styles.netWorthHeader}>
-            <Text style={styles.netWorthLabel}>SALDO DISPONIBLE</Text>
-            <View style={styles.privacyBadge}>
-              <CustomIcon name="ShieldCheck" size={13} color="#10B981" />
-              <Text style={styles.privacyText}>100% Privado</Text>
+            <Text style={[styles.netWorthLabel, { color: colors.textMuted }]}>SALDO DISPONIBLE</Text>
+            <View style={[styles.privacyBadge, { backgroundColor: colors.successBg }]}>
+              <CustomIcon name="ShieldCheck" size={14} color={colors.success} />
+              <Text style={[styles.privacyText, { color: colors.success }]}>100% Privado</Text>
             </View>
           </View>
 
-          <Text style={[styles.netWorthAmount, netWorth < 0 && { color: '#F87171' }]}>
+          <Text
+            style={[
+              styles.netWorthAmount,
+              { color: netWorth < 0 ? colors.danger : colors.textPrimary },
+            ]}
+          >
             {isBalanceHidden ? '$ ••••••' : formatCurrency(netWorth, currency)}
           </Text>
 
-          <View style={styles.netWorthBreakdown}>
+          <View style={[styles.netWorthBreakdown, { backgroundColor: colors.insetOverlay }]}>
             <View style={styles.netWorthItem}>
-              <View style={styles.dotIncome} />
+              <View style={[styles.dotIncome, { backgroundColor: colors.success }]} />
               <View>
-                <Text style={styles.breakdownSub}>Total Cuentas</Text>
-                <Text style={styles.breakdownVal}>
+                <Text style={[styles.breakdownSub, { color: colors.textMuted }]}>Total Cuentas</Text>
+                <Text style={[styles.breakdownVal, { color: colors.textPrimary }]}>
                   {isBalanceHidden ? '••••••' : formatCurrency(totalBankBalance, currency)}
                 </Text>
               </View>
             </View>
 
-            <View style={styles.dividerVertical} />
+            <View style={[styles.dividerVertical, { backgroundColor: colors.divider }]} />
 
             <View style={styles.netWorthItem}>
-              <View style={styles.dotDebt} />
+              <View style={[styles.dotDebt, { backgroundColor: colors.danger }]} />
               <View>
-                <Text style={styles.breakdownSub}>
+                <Text style={[styles.breakdownSub, { color: colors.textMuted }]}>
                   {totalOtherDebts > 0 ? 'Total Deudas' : 'Deuda Tarjetas'}
                 </Text>
-                <Text style={[styles.breakdownVal, { color: '#F87171' }]}>
+                <Text style={[styles.breakdownVal, { color: colors.danger }]}>
                   {isBalanceHidden
                     ? '••••••'
                     : formatCurrency(totalOtherDebts > 0 ? totalAllDebts : totalCreditDebt, currency)}
@@ -166,23 +200,43 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
         {/* Resumen de Flujo Mensual (Ingresos vs Gastos) */}
         <View style={styles.cashFlowRow}>
           {/* Ingresos */}
-          <View style={[styles.flowCard, styles.flowCardIncome]}>
-            <View style={styles.flowIconBoxIncome}>
-              <CustomIcon name="ArrowDownLeft" size={16} color="#10B981" />
+          <View
+            style={[
+              styles.flowCard,
+              {
+                backgroundColor: colors.surfaceCard,
+                borderColor: colors.border,
+                borderLeftWidth: 3,
+                borderLeftColor: colors.success,
+              },
+            ]}
+          >
+            <View style={[styles.flowIconBoxIncome, { backgroundColor: colors.successBg }]}>
+              <CustomIcon name="ArrowDownLeft" size={16} color={colors.success} />
             </View>
-            <Text style={styles.flowLabel}>Ingresos del Mes</Text>
-            <Text style={styles.flowAmountIncome}>
+            <Text style={[styles.flowLabel, { color: colors.textMuted }]}>Ingresos del Mes</Text>
+            <Text style={[styles.flowAmountIncome, { color: colors.success }]}>
               {isBalanceHidden ? '••••••' : formatCurrency(monthlyIncome, currency)}
             </Text>
           </View>
 
           {/* Gastos */}
-          <View style={[styles.flowCard, styles.flowCardExpense]}>
-            <View style={styles.flowIconBoxExpense}>
-              <CustomIcon name="ArrowUpRight" size={16} color="#EF4444" />
+          <View
+            style={[
+              styles.flowCard,
+              {
+                backgroundColor: colors.surfaceCard,
+                borderColor: colors.border,
+                borderLeftWidth: 3,
+                borderLeftColor: colors.danger,
+              },
+            ]}
+          >
+            <View style={[styles.flowIconBoxExpense, { backgroundColor: colors.dangerBg }]}>
+              <CustomIcon name="ArrowUpRight" size={16} color={colors.danger} />
             </View>
-            <Text style={styles.flowLabel}>Gastos del Mes</Text>
-            <Text style={styles.flowAmountExpense}>
+            <Text style={[styles.flowLabel, { color: colors.textMuted }]}>Gastos del Mes</Text>
+            <Text style={[styles.flowAmountExpense, { color: colors.danger }]}>
               {isBalanceHidden ? '••••••' : formatCurrency(monthlyExpense, currency)}
             </Text>
           </View>
@@ -190,17 +244,29 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
 
         {/* Sección de Tarjetas de Crédito */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Tarjetas de Crédito</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Tarjetas de Crédito</Text>
           <TouchableOpacity onPress={() => onNavigateToTab('cards')}>
-            <Text style={styles.seeAllText}>Gestionar ({creditCards.length})</Text>
+            <Text style={[styles.seeAllText, { color: colors.primaryLight }]}>
+              Gestionar ({creditCards.length})
+            </Text>
           </TouchableOpacity>
         </View>
 
         {creditCards.length === 0 ? (
-          <TouchableOpacity style={styles.emptyCard} onPress={() => onNavigateToTab('cards')}>
-            <CustomIcon name="CreditCard" size={28} color="#6366F1" />
-            <Text style={styles.emptyCardText}>No tienes tarjetas registradas</Text>
-            <Text style={styles.emptyCardSub}>Toca aquí para agregar tu primera tarjeta de crédito</Text>
+          <TouchableOpacity
+            style={[
+              styles.emptyCard,
+              { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+            ]}
+            onPress={() => onNavigateToTab('cards')}
+          >
+            <CustomIcon name="CreditCard" size={28} color={colors.primary} />
+            <Text style={[styles.emptyCardText, { color: colors.textPrimary }]}>
+              No tienes tarjetas registradas
+            </Text>
+            <Text style={[styles.emptyCardSub, { color: colors.textMuted }]}>
+              Toca aquí para agregar tu primera tarjeta de crédito
+            </Text>
           </TouchableOpacity>
         ) : (
           <View>
@@ -245,7 +311,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
                     key={i}
                     style={[
                       styles.paginationDot,
-                      activeCardIndex === i && styles.paginationDotActive,
+                      { backgroundColor: colors.borderLight },
+                      activeCardIndex === i && [
+                        styles.paginationDotActive,
+                        { backgroundColor: colors.primary },
+                      ],
                     ]}
                   />
                 ))}
@@ -258,8 +328,15 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
         {activePurchases.length > 0 && (
           <View style={styles.installmentsBlock}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Cuotas Pendientes</Text>
-              <Text style={styles.activeCountBadge}>{activePurchases.length} activas</Text>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Cuotas Pendientes</Text>
+              <Text
+                style={[
+                  styles.activeCountBadge,
+                  { color: colors.primaryLight, backgroundColor: alpha(colors.primary, 0.15) },
+                ]}
+              >
+                {activePurchases.length} activas
+              </Text>
             </View>
 
             {activePurchases.map((purch) => {
@@ -267,27 +344,39 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
               return (
                 <TouchableOpacity
                   key={purch.id}
-                  style={styles.activePurchaseItem}
+                  style={[
+                    styles.activePurchaseItem,
+                    { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                  ]}
                   onPress={() => handleOpenAmortization(purch)}
                   activeOpacity={0.8}
                 >
                   <View style={styles.purchLeft}>
-                    <View style={styles.purchIconBox}>
-                      <CustomIcon name="CalendarClock" size={16} color="#818CF8" />
+                    <View
+                      style={[
+                        styles.purchIconBox,
+                        { backgroundColor: alpha(colors.primary, 0.15) },
+                      ]}
+                    >
+                      <CustomIcon name="CalendarClock" size={16} color={colors.primaryLight} />
                     </View>
-                    <View>
-                      <Text style={styles.purchTitle}>{purch.description}</Text>
-                      <Text style={styles.purchSub}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.purchTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                        {purch.description}
+                      </Text>
+                      <Text style={[styles.purchSub, { color: colors.textSecondary }]}>
                         {card?.name || 'Tarjeta'} • Cuota {purch.installmentsPaid} de {purch.installmentsTotal}
                       </Text>
                     </View>
                   </View>
 
                   <View style={styles.purchRight}>
-                    <Text style={styles.purchAmount}>
+                    <Text style={[styles.purchAmount, { color: colors.successLight }]}>
                       {formatCurrency(purch.monthlyInstallmentAmount, currency)} / mes
                     </Text>
-                    <Text style={styles.purchRate}>{purch.interestRateMonthly}% E.M.</Text>
+                    <Text style={[styles.purchRate, { color: colors.warning }]}>
+                      {purch.interestRateMonthly}% E.M.
+                    </Text>
                   </View>
                 </TouchableOpacity>
               );
@@ -297,9 +386,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
 
         {/* Sección de Cuentas Bancarias */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Mis Cuentas & Billeteras</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Mis Cuentas & Billeteras</Text>
           <TouchableOpacity onPress={() => onNavigateToTab('accounts')}>
-            <Text style={styles.seeAllText}>Ver todas</Text>
+            <Text style={[styles.seeAllText, { color: colors.primaryLight }]}>Ver todas</Text>
           </TouchableOpacity>
         </View>
 
@@ -320,20 +409,26 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
               onPayDebt={() => handleOpenPayDebt(acc)}
             />
           ))}
-          <TouchableOpacity style={styles.seeAllTile} onPress={() => onNavigateToTab('accounts')} activeOpacity={0.8}>
-            <CustomIcon name="ArrowRight" size={18} color="#818CF8" />
-            <Text style={styles.seeAllTileText}>Ver todas</Text>
+          <TouchableOpacity
+            style={[styles.seeAllTile, { borderColor: colors.borderLight }]}
+            onPress={() => onNavigateToTab('accounts')}
+            activeOpacity={0.8}
+          >
+            <CustomIcon name="ArrowRight" size={18} color={colors.primaryLight} />
+            <Text style={[styles.seeAllTileText, { color: colors.primaryLight }]}>Ver todas</Text>
           </TouchableOpacity>
         </ScrollView>
 
         {/* Últimas Transacciones */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Últimos Movimientos</Text>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Últimos Movimientos</Text>
         </View>
 
         {recentTransactions.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>No hay movimientos registrados.</Text>
+            <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+              No hay movimientos registrados.
+            </Text>
           </View>
         ) : (
           <View style={styles.transactionsList}>
@@ -344,14 +439,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
         )}
 
         <TouchableOpacity
-          style={styles.historyBtn}
+          style={[styles.historyBtn, { borderColor: colors.borderLight }]}
           onPress={() => onNavigateToTab('transactions')}
           activeOpacity={0.8}
         >
-          <Text style={styles.historyBtnText}>Ver todo el historial</Text>
+          <Text style={[styles.historyBtnText, { color: colors.primaryLight }]}>
+            Ver todo el historial
+          </Text>
         </TouchableOpacity>
 
-        <View style={{ height: 90 }} />
+        <View style={{ height: Layout.bottomNavSpace }} />
       </ScrollView>
 
       {/* Modales */}
@@ -393,7 +490,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigateToTa
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
   },
   container: {
     flex: 1,
@@ -406,46 +502,27 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   greeting: {
-    color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   appName: {
-    color: '#FFFFFF',
     fontSize: 22,
     fontWeight: 'bold',
   },
   settingsHeaderBtn: {
-    backgroundColor: Theme.colors.surfaceElevated,
     width: 42,
     height: 42,
     borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
-  },
-  quickAddBtn: {
-    backgroundColor: Theme.colors.primary,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
   },
   netWorthCard: {
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 20,
     padding: 18,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   netWorthHeader: {
     flexDirection: 'row',
@@ -454,27 +531,23 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   netWorthLabel: {
-    color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 1.2,
+    letterSpacing: 1,
   },
   privacyBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingVertical: 4,
+    borderRadius: 8,
     gap: 4,
   },
   privacyText: {
-    color: '#10B981',
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   netWorthAmount: {
-    color: '#FFFFFF',
     fontSize: 30,
     fontWeight: 'bold',
     marginVertical: 4,
@@ -482,7 +555,6 @@ const styles = StyleSheet.create({
   netWorthBreakdown: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(0, 0, 0, 0.25)',
     borderRadius: 12,
     padding: 12,
     marginTop: 8,
@@ -497,27 +569,23 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#10B981',
   },
   dotDebt: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#EF4444',
   },
   breakdownSub: {
-    color: '#94A3B8',
-    fontSize: 10,
+    fontSize: 13,
+    fontWeight: '500',
   },
   breakdownVal: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
     marginTop: 1,
   },
   dividerVertical: {
     width: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     marginHorizontal: 8,
   },
   cashFlowRow: {
@@ -527,51 +595,36 @@ const styles = StyleSheet.create({
   },
   flowCard: {
     flex: 1,
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#1E293B',
-  },
-  flowCardIncome: {
-    borderLeftWidth: 3,
-    borderLeftColor: '#10B981',
-  },
-  flowCardExpense: {
-    borderLeftWidth: 3,
-    borderLeftColor: '#EF4444',
   },
   flowIconBoxIncome: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     borderRadius: 8,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
   },
   flowIconBoxExpense: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     borderRadius: 8,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
   },
   flowLabel: {
-    color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '500',
   },
   flowAmountIncome: {
-    color: '#10B981',
     fontSize: 16,
     fontWeight: 'bold',
     marginTop: 2,
   },
   flowAmountExpense: {
-    color: '#EF4444',
     fontSize: 16,
     fontWeight: 'bold',
     marginTop: 2,
@@ -584,12 +637,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    color: '#FFFFFF',
     fontSize: 17,
     fontWeight: 'bold',
   },
   seeAllText: {
-    color: '#818CF8',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -608,33 +659,27 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#334155',
   },
   paginationDotActive: {
     width: 20,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#818CF8',
   },
   emptyCard: {
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1E293B',
     borderStyle: 'dashed',
   },
   emptyCardText: {
-    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: 'bold',
     marginTop: 8,
   },
   emptyCardSub: {
-    color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 13,
     textAlign: 'center',
     marginTop: 4,
   },
@@ -642,65 +687,54 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   activeCountBadge: {
-    color: '#818CF8',
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   activePurchaseItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surfaceCard,
     padding: 12,
     borderRadius: 14,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   purchLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     flex: 1,
+    marginRight: 8,
   },
   purchIconBox: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: 10,
-    backgroundColor: 'rgba(129, 140, 248, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   purchTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   purchSub: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginTop: 1,
+    fontSize: 13,
+    marginTop: 2,
   },
   purchRight: {
     alignItems: 'flex-end',
   },
   purchAmount: {
-    color: '#34D399',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   purchRate: {
-    color: '#F59E0B',
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: '600',
     marginTop: 1,
-  },
-  accountsGrid: {
-    marginBottom: 10,
   },
   accountsScroll: {
     marginBottom: 14,
@@ -713,29 +747,26 @@ const styles = StyleSheet.create({
     width: 96,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#334155',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
   },
   seeAllTileText: {
-    color: '#818CF8',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   historyBtn: {
     borderWidth: 1,
-    borderColor: '#334155',
     borderRadius: 12,
-    paddingVertical: 10,
+    minHeight: Layout.minTouchHeight,
+    justifyContent: 'center',
     alignItems: 'center',
     marginTop: 2,
     marginBottom: 10,
   },
   historyBtnText: {
-    color: '#818CF8',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
   },
   transactionsList: {
@@ -746,7 +777,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    color: '#64748B',
     fontSize: 13,
   },
 });

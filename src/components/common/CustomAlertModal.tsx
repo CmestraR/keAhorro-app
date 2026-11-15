@@ -2,13 +2,14 @@ import React from 'react';
 import {
   Modal,
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   Dimensions,
 } from 'react-native';
 import { CustomIcon } from './CustomIcon';
-import { Theme } from './Theme';
+import { useAppTheme } from '../../context/ThemeContext';
+import { alpha } from './Theme';
+import { Text } from './AppText';
+import { TouchableOpacity } from './Touchable';
 
 export type AlertType = 'success' | 'info' | 'warning' | 'error' | 'confirm';
 
@@ -39,6 +40,8 @@ export const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
   options,
   onClose,
 }) => {
+  const { colors } = useAppTheme();
+
   if (!options) return null;
 
   const {
@@ -51,16 +54,16 @@ export const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
   const getIconAndColor = () => {
     switch (type) {
       case 'success':
-        return { icon: 'CheckCircle2', color: '#10B981', bg: 'rgba(16, 185, 129, 0.15)', border: '#059669' };
+        return { icon: 'CheckCircle2', color: colors.success, bg: colors.successBg, border: colors.success };
       case 'warning':
-        return { icon: 'AlertTriangle', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.15)', border: '#D97706' };
+        return { icon: 'AlertTriangle', color: colors.warning, bg: colors.warningBg, border: colors.warning };
       case 'error':
-        return { icon: 'AlertCircle', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.15)', border: '#DC2626' };
+        return { icon: 'AlertCircle', color: colors.danger, bg: colors.dangerBg, border: colors.danger };
       case 'confirm':
-        return { icon: 'HelpCircle', color: '#818CF8', bg: 'rgba(99, 102, 241, 0.15)', border: '#6366F1' };
+        return { icon: 'HelpCircle', color: colors.primaryLight, bg: alpha(colors.primary, 0.15), border: colors.primary };
       case 'info':
       default:
-        return { icon: 'Sparkles', color: '#6366F1', bg: 'rgba(99, 102, 241, 0.15)', border: '#4F46E5' };
+        return { icon: 'Sparkles', color: colors.primary, bg: alpha(colors.primary, 0.15), border: colors.primary };
     }
   };
 
@@ -89,15 +92,28 @@ export const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
           activeOpacity={1}
           onPress={onClose}
         />
-        <View style={[styles.dialogContainer, { borderColor: border + '40' }]}>
+        <View
+          style={[
+            styles.dialogContainer,
+            {
+              backgroundColor: colors.surface,
+              borderColor: alpha(border, 0.4),
+            },
+          ]}
+        >
           {/* Icon Badge */}
-          <View style={[styles.iconWrapper, { backgroundColor: bg, borderColor: border + '60' }]}>
+          <View
+            style={[
+              styles.iconWrapper,
+              { backgroundColor: bg, borderColor: alpha(border, 0.6) },
+            ]}
+          >
             <CustomIcon name={options.icon || icon} size={28} color={color} />
           </View>
 
           {/* Title & Message */}
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.message}>{message}</Text>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>{title}</Text>
+          <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text>
 
           {/* Action Buttons */}
           <View style={[styles.buttonsRow, buttons.length > 2 && styles.buttonsCol]}>
@@ -111,9 +127,13 @@ export const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
                   activeOpacity={0.8}
                   style={[
                     styles.button,
-                    isCancel && styles.cancelButton,
-                    isDestructive && styles.destructiveButton,
-                    !isCancel && !isDestructive && styles.primaryButton,
+                    isCancel && {
+                      backgroundColor: colors.surfaceElevated,
+                      borderWidth: 1,
+                      borderColor: colors.borderLight,
+                    },
+                    isDestructive && { backgroundColor: colors.danger, flex: 1 },
+                    !isCancel && !isDestructive && { backgroundColor: colors.primary, flex: 1 },
                     buttons.length === 2 && { flex: 1 },
                   ]}
                   onPress={() => handleButtonPress(btn)}
@@ -121,9 +141,8 @@ export const CustomAlertModal: React.FC<CustomAlertModalProps> = ({
                   <Text
                     style={[
                       styles.buttonText,
-                      isCancel && styles.cancelButtonText,
-                      isDestructive && styles.destructiveButtonText,
-                      !isCancel && !isDestructive && styles.primaryButtonText,
+                      isCancel && { color: colors.textSecondary },
+                      (isDestructive || !isCancel) && { color: '#FFFFFF' },
                     ]}
                   >
                     {btn.text}
@@ -152,7 +171,6 @@ const styles = StyleSheet.create({
   dialogContainer: {
     width: '100%',
     maxWidth: width - 48,
-    backgroundColor: '#0F172A',
     borderRadius: 22,
     paddingHorizontal: 22,
     paddingTop: 24,
@@ -161,7 +179,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.4,
     shadowRadius: 20,
     elevation: 25,
   },
@@ -175,7 +193,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   title: {
-    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
@@ -183,8 +200,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   message: {
-    color: '#94A3B8',
-    fontSize: 13.5,
+    fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',
     marginBottom: 22,
@@ -205,30 +221,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryButton: {
-    backgroundColor: '#6366F1',
-    flex: 1,
-  },
-  cancelButton: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  destructiveButton: {
-    backgroundColor: '#EF4444',
-    flex: 1,
-  },
   buttonText: {
     fontSize: 14,
     fontWeight: '700',
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-  },
-  cancelButtonText: {
-    color: '#94A3B8',
-  },
-  destructiveButtonText: {
-    color: '#FFFFFF',
   },
 });

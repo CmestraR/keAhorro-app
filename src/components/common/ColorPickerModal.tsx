@@ -2,15 +2,14 @@ import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  TextInput,
   Platform,
 } from 'react-native';
 import { CustomIcon } from './CustomIcon';
 import { Theme } from './Theme';
+import { Text, TextInput } from './AppText';
+import { TouchableOpacity } from './Touchable';
 
 interface ColorPickerModalProps {
   visible: boolean;

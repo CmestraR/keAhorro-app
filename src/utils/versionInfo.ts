@@ -12,15 +12,15 @@ export interface ReleaseInfo {
 }
 
 export const APP_RELEASE_INFO: ReleaseInfo = {
-  version: '2.0.1',
-  codeName: 'Fase 2.2 — Hotfix Migraciones SQLite & Saldo Actual',
-  buildDate: '1 Sep 2026',
-  channel: 'Producción / Preview',
+  version: '2.1.0',
+  codeName: 'Fase 2 — Sistema Visual, Tema Claro/Oscuro & Micro-animaciones',
+  buildDate: 'Nov 2026',
+  channel: 'Test / Preview',
   highlights: [
-    'Motor contable de Tarjetas de Crédito, Extractos y Cuotas',
-    '3 Saldos financieros exactos: Deuda Total, Facturada y No Facturada',
-    'Configurar Saldo Actual para tarjetas previas a la app',
-    'Migraciones SQLite idempotentes y automáticas para bases existentes',
-    'Conciliación Bancaria con trazabilidad individual y reversión',
+    'Tipografía Plus Jakarta Sans, números tabulares y textos >= 13px',
+    'Modo Oscuro de Alto Contraste y nuevo Modo Claro Cálido desde el Header',
+    'Micro-interacciones táctiles (escala 0.97) y barras animadas (500ms)',
+    'Transiciones suaves (fade + slide-up 200ms) entre pestañas y vistas',
+    'Filtros de Historial de 40px+ y espacio inferior seguro (110px)',
   ],
 };

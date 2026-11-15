@@ -1,25 +1,23 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  Alert,
-  SafeAreaView,
-  StatusBar,
   Linking,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useFinancial } from '../context/FinancialContext';
 import { useAlert } from '../context/AlertContext';
+import { useAppTheme } from '../context/ThemeContext';
 import { NotificationService } from '../utils/notificationService';
-import { Theme } from '../components/common/Theme';
+import { Layout, alpha } from '../components/common/Theme';
 import { CustomIcon } from '../components/common/CustomIcon';
+import { Text } from '../components/common/AppText';
+import { TouchableOpacity } from '../components/common/Touchable';
 import { ManageCategoriesModal } from '../components/categories/ManageCategoriesModal';
 import { UpdateService } from '../utils/updateService';
 import { APP_RELEASE_INFO } from '../utils/versionInfo';
-import { ActivityIndicator } from 'react-native';
 
 const CURRENCIES = [
   { code: 'COP', label: 'Peso Colombiano (COP $)' },
@@ -31,6 +29,7 @@ const CURRENCIES = [
 export const SettingsScreen: React.FC = () => {
   const { currency, setCurrencyPreference, loadDemoData, resetDatabase, creditCards } = useFinancial();
   const { showSuccess, showWarning, showConfirm } = useAlert();
+  const { mode, setMode, colors } = useAppTheme();
   const [manageCatsVisible, setManageCatsVisible] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const appInfo = UpdateService.getAppInfo();
@@ -108,18 +107,104 @@ export const SettingsScreen: React.FC = () => {
   };
 
   return (
-    <View style={styles.safeArea}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: Layout.bottomNavSpace }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.tag}>CONFIGURACIÓN</Text>
-          <Text style={styles.title}>Ajustes & Opciones</Text>
+          <Text style={[styles.tag, { color: colors.primaryLight }]}>CONFIGURACIÓN</Text>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Ajustes & Opciones</Text>
+        </View>
+
+        {/* Apariencia (Tema Claro Cálido / Oscuro Alto Contraste) */}
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Apariencia & Contraste</Text>
+          <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
+            Elige entre el Modo Oscuro de Alto Contraste o el Modo Claro Cálido para máxima legibilidad:
+          </Text>
+
+          <View style={styles.themeSelectorRow}>
+            <TouchableOpacity
+              style={[
+                styles.themeOption,
+                {
+                  backgroundColor: colors.surfaceElevated,
+                  borderColor: mode === 'dark' ? colors.primary : colors.borderLight,
+                },
+                mode === 'dark' && {
+                  backgroundColor: alpha(colors.primary, 0.16),
+                },
+              ]}
+              onPress={() => setMode('dark')}
+            >
+              <CustomIcon
+                name="Moon"
+                size={18}
+                color={mode === 'dark' ? colors.primaryLight : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.themeOptionTitle,
+                  { color: mode === 'dark' ? colors.textPrimary : colors.textSecondary },
+                ]}
+              >
+                Oscuro
+              </Text>
+              <Text style={[styles.themeOptionSub, { color: colors.textMuted }]}>
+                Alto contraste
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.themeOption,
+                {
+                  backgroundColor: colors.surfaceElevated,
+                  borderColor: mode === 'light' ? colors.primary : colors.borderLight,
+                },
+                mode === 'light' && {
+                  backgroundColor: alpha(colors.primary, 0.16),
+                },
+              ]}
+              onPress={() => setMode('light')}
+            >
+              <CustomIcon
+                name="Sun"
+                size={18}
+                color={mode === 'light' ? colors.warning : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.themeOptionTitle,
+                  { color: mode === 'light' ? colors.textPrimary : colors.textSecondary },
+                ]}
+              >
+                Claro Cálido
+              </Text>
+              <Text style={[styles.themeOptionSub, { color: colors.textMuted }]}>
+                Lectura diurna
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Selector de Moneda */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Moneda Principal</Text>
-          <Text style={styles.cardSubtitle}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Moneda Principal</Text>
+          <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
             Formato de moneda que se usará en toda la aplicación:
           </Text>
 
@@ -128,184 +213,308 @@ export const SettingsScreen: React.FC = () => {
             return (
               <TouchableOpacity
                 key={c.code}
-                style={[styles.currencyRow, isSelected && styles.currencyRowSelected]}
+                style={[
+                  styles.currencyRow,
+                  {
+                    backgroundColor: colors.surfaceElevated,
+                    borderColor: colors.borderLight,
+                  },
+                  isSelected && {
+                    backgroundColor: alpha(colors.primary, 0.18),
+                    borderColor: colors.primaryLight,
+                  },
+                ]}
                 onPress={() => setCurrencyPreference(c.code)}
               >
-                <Text style={[styles.currencyText, isSelected && styles.currencyTextSelected]}>
+                <Text
+                  style={[
+                    styles.currencyText,
+                    { color: colors.textSecondary },
+                    isSelected && { color: colors.textPrimary, fontWeight: 'bold' },
+                  ]}
+                >
                   {c.label}
                 </Text>
-                {isSelected && <CustomIcon name="Check" size={16} color="#34D399" />}
+                {isSelected && <CustomIcon name="Check" size={16} color={colors.successLight} />}
               </TouchableOpacity>
             );
           })}
         </View>
 
         {/* Categorías Inteligentes & Reglas de IA */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Categorías & Reglas de IA</Text>
-          <Text style={styles.cardSubtitle}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
+            Categorías & Reglas de IA
+          </Text>
+          <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
             Crea categorías personalizadas y asigna palabras clave para que la app autocomplete tus gastos en automático:
           </Text>
 
-          <TouchableOpacity style={styles.actionRow} onPress={() => setManageCatsVisible(true)}>
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-              <CustomIcon name="Sparkles" size={16} color="#10B981" />
+          <TouchableOpacity
+            style={[styles.actionRow, { backgroundColor: colors.surfaceElevated }]}
+            onPress={() => setManageCatsVisible(true)}
+          >
+            <View style={[styles.actionIconBox, { backgroundColor: colors.successBg }]}>
+              <CustomIcon name="Sparkles" size={16} color={colors.success} />
             </View>
             <View style={styles.actionTextBox}>
-              <Text style={styles.actionTitle}>Gestionar Categorías & Palabras Clave</Text>
-              <Text style={styles.actionSub}>Configura reglas de detección inteligente</Text>
+              <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>
+                Gestionar Categorías & Palabras Clave
+              </Text>
+              <Text style={[styles.actionSub, { color: colors.textSecondary }]}>
+                Configura reglas de detección inteligente
+              </Text>
             </View>
           </TouchableOpacity>
         </View>
 
         {/* Notificaciones & Recordatorios de Corte */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Alertas & Recordatorios de Tarjetas</Text>
-          <Text style={styles.cardSubtitle}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
+            Alertas & Recordatorios de Tarjetas
+          </Text>
+          <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
             La app monitorea automáticamente tus días de corte y de pago para avisarte 3 días antes de cada vencimiento:
           </Text>
 
           <TouchableOpacity
-            style={styles.actionRow}
+            style={[styles.actionRow, { backgroundColor: colors.surfaceElevated }]}
             onPress={handleTestNotification}
           >
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-              <CustomIcon name="Bell" size={16} color="#F59E0B" />
+            <View style={[styles.actionIconBox, { backgroundColor: colors.warningBg }]}>
+              <CustomIcon name="Bell" size={16} color={colors.warning} />
             </View>
             <View style={styles.actionTextBox}>
-              <Text style={styles.actionTitle}>Probar Alerta en Barra de Notificaciones</Text>
-              <Text style={styles.actionSub}>Envía un aviso real a la barra superior de tu celular</Text>
+              <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>
+                Probar Alerta en Barra de Notificaciones
+              </Text>
+              <Text style={[styles.actionSub, { color: colors.textSecondary }]}>
+                Envía un aviso real a la barra superior de tu celular
+              </Text>
             </View>
           </TouchableOpacity>
         </View>
 
         {/* Privacidad & Datos */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Datos & Almacenamiento Local</Text>
-          <Text style={styles.cardSubtitle}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
+            Datos & Almacenamiento Local
+          </Text>
+          <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
             Toda tu información financiera se almacena de forma 100% segura y privada en tu dispositivo mediante SQLite. No requiere conexión a internet.
           </Text>
 
-          <TouchableOpacity style={styles.actionRow} onPress={handleSeed}>
-            <View style={styles.actionIconBox}>
-              <CustomIcon name="Sparkles" size={16} color="#818CF8" />
+          <TouchableOpacity
+            style={[styles.actionRow, { backgroundColor: colors.surfaceElevated }]}
+            onPress={handleSeed}
+          >
+            <View
+              style={[
+                styles.actionIconBox,
+                { backgroundColor: alpha(colors.primary, 0.15) },
+              ]}
+            >
+              <CustomIcon name="Sparkles" size={16} color={colors.primaryLight} />
             </View>
             <View style={styles.actionTextBox}>
-              <Text style={styles.actionTitle}>Cargar Datos de Ejemplo</Text>
-              <Text style={styles.actionSub}>Genera cuentas, tarjetas de crédito y cuotas de prueba</Text>
+              <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>
+                Cargar Datos de Ejemplo
+              </Text>
+              <Text style={[styles.actionSub, { color: colors.textSecondary }]}>
+                Genera cuentas, tarjetas de crédito y cuotas de prueba
+              </Text>
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.actionRow, styles.actionRowDanger]} onPress={handleReset}>
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.15)' }]}>
-              <CustomIcon name="Trash2" size={16} color="#EF4444" />
+          <TouchableOpacity
+            style={[styles.actionRow, { backgroundColor: colors.dangerBg }]}
+            onPress={handleReset}
+          >
+            <View style={[styles.actionIconBox, { backgroundColor: alpha(colors.danger, 0.2) }]}>
+              <CustomIcon name="Trash2" size={16} color={colors.danger} />
             </View>
             <View style={styles.actionTextBox}>
-              <Text style={[styles.actionTitle, { color: '#F87171' }]}>Vaciar Base de Datos</Text>
-              <Text style={styles.actionSub}>Elimina todas las cuentas, tarjetas y movimientos</Text>
+              <Text style={[styles.actionTitle, { color: colors.danger }]}>
+                Vaciar Base de Datos
+              </Text>
+              <Text style={[styles.actionSub, { color: colors.textSecondary }]}>
+                Elimina todas las cuentas, tarjetas y movimientos
+              </Text>
             </View>
           </TouchableOpacity>
         </View>
 
         {/* Sistema de Versión y Actualizaciones OTA */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Versión & Actualizaciones</Text>
-          <Text style={styles.cardSubtitle}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
+            Versión & Actualizaciones
+          </Text>
+          <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
             Administra las actualizaciones instantáneas (Over-The-Air) y el estado de tu versión instalada:
           </Text>
 
           <TouchableOpacity
-            style={styles.actionRow}
+            style={[styles.actionRow, { backgroundColor: colors.surfaceElevated }]}
             onPress={handleCheckUpdatesManual}
             disabled={isCheckingUpdates}
             activeOpacity={0.8}
           >
-            <View style={[styles.actionIconBox, { backgroundColor: 'rgba(99, 102, 241, 0.15)' }]}>
+            <View
+              style={[
+                styles.actionIconBox,
+                { backgroundColor: alpha(colors.primary, 0.15) },
+              ]}
+            >
               {isCheckingUpdates ? (
-                <ActivityIndicator size="small" color="#6366F1" />
+                <ActivityIndicator size="small" color={colors.primary} />
               ) : (
-                <CustomIcon name="RefreshCw" size={16} color="#6366F1" />
+                <CustomIcon name="RefreshCw" size={16} color={colors.primary} />
               )}
             </View>
             <View style={styles.actionTextBox}>
-              <Text style={styles.actionTitle}>
+              <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>
                 {isCheckingUpdates ? 'Buscando Actualizaciones...' : 'Buscar Actualizaciones'}
               </Text>
-              <Text style={styles.actionSub}>Comprueba si hay mejoras OTA disponibles</Text>
+              <Text style={[styles.actionSub, { color: colors.textSecondary }]}>
+                Comprueba si hay mejoras OTA disponibles
+              </Text>
             </View>
           </TouchableOpacity>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
           {/* Tarjeta de Novedades de la Versión Activa */}
-          <View style={styles.releaseBadgeCard}>
+          <View
+            style={[
+              styles.releaseBadgeCard,
+              {
+                backgroundColor: alpha(colors.primary, 0.08),
+                borderColor: alpha(colors.primary, 0.25),
+              },
+            ]}
+          >
             <View style={styles.releaseHeaderRow}>
-              <View style={styles.releasePill}>
+              <View style={[styles.releasePill, { backgroundColor: colors.primary }]}>
                 <Text style={styles.releasePillText}>v{APP_RELEASE_INFO.version}</Text>
               </View>
-              <Text style={styles.releaseDateText}>{APP_RELEASE_INFO.buildDate}</Text>
+              <Text style={[styles.releaseDateText, { color: colors.textMuted }]}>
+                {APP_RELEASE_INFO.buildDate}
+              </Text>
             </View>
-            <Text style={styles.releaseCodeName}>{APP_RELEASE_INFO.codeName}</Text>
-            
+            <Text style={[styles.releaseCodeName, { color: colors.textPrimary }]}>
+              {APP_RELEASE_INFO.codeName}
+            </Text>
+
             <View style={styles.releaseHighlightsList}>
               {APP_RELEASE_INFO.highlights.map((item, idx) => (
                 <View key={idx} style={styles.highlightItem}>
-                  <CustomIcon name="CheckCircle2" size={12} color="#10B981" />
-                  <Text style={styles.highlightText}>{item}</Text>
+                  <CustomIcon name="CheckCircle2" size={14} color={colors.success} />
+                  <Text style={[styles.highlightText, { color: colors.textSecondary }]}>
+                    {item}
+                  </Text>
                 </View>
               ))}
             </View>
           </View>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Versión de Aplicación</Text>
-            <Text style={styles.infoValue}>v{APP_RELEASE_INFO.version} (v{appInfo.appVersion})</Text>
+          <View style={[styles.infoRow, { borderBottomColor: colors.divider }]}>
+            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Versión de Aplicación</Text>
+            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+              v{APP_RELEASE_INFO.version} (v{appInfo.appVersion})
+            </Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Compilación (Build)</Text>
-            <Text style={styles.infoValue}>Build {appInfo.versionCode}</Text>
+          <View style={[styles.infoRow, { borderBottomColor: colors.divider }]}>
+            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Compilación (Build)</Text>
+            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+              Build {appInfo.versionCode}
+            </Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Runtime Version</Text>
-            <Text style={styles.infoValue}>{appInfo.runtimeVersion}</Text>
+          <View style={[styles.infoRow, { borderBottomColor: colors.divider }]}>
+            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Runtime Version</Text>
+            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+              {appInfo.runtimeVersion}
+            </Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Canal EAS</Text>
-            <Text style={[styles.infoValue, { color: '#818CF8', fontWeight: 'bold' }]}>
+          <View style={[styles.infoRow, { borderBottomColor: colors.divider }]}>
+            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Canal EAS</Text>
+            <Text style={[styles.infoValue, { color: colors.primaryLight, fontWeight: 'bold' }]}>
               {appInfo.channel.toUpperCase()}
             </Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Revisión OTA</Text>
-            <Text style={styles.infoValue}>
-              {appInfo.updateId ? `Update ${appInfo.updateId.substring(0, 8)}` : `Bundle Base (v${appInfo.appVersion})`}
+          <View style={[styles.infoRow, { borderBottomColor: colors.divider }]}>
+            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Revisión OTA</Text>
+            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+              {appInfo.updateId
+                ? `Update ${appInfo.updateId.substring(0, 8)}`
+                : `Bundle Base (v${appInfo.appVersion})`}
             </Text>
           </View>
         </View>
 
         {/* Info App & Creador */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Acerca de la App</Text>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Acerca de la App</Text>
 
           {/* Tarjeta del Creador */}
-          <View style={styles.creatorCard}>
+          <View
+            style={[
+              styles.creatorCard,
+              { backgroundColor: colors.inset, borderColor: colors.borderLight },
+            ]}
+          >
             <Image
               source={require('../../assets/icon.png')}
               style={styles.creatorAppLogo}
             />
             <View style={{ flex: 1 }}>
-              <Text style={styles.creatorAppTitle}>Control de Gastos</Text>
-              <Text style={styles.creatorAuthorText}>
-                Creado Por: <Text style={styles.creatorNameText}>Cristian Mestra</Text>
+              <Text style={[styles.creatorAppTitle, { color: colors.textPrimary }]}>
+                keAhorro
+              </Text>
+              <Text style={[styles.creatorAuthorText, { color: colors.textSecondary }]}>
+                Creado Por:{' '}
+                <Text style={[styles.creatorNameText, { color: colors.successLight }]}>
+                  Cristian Mestra
+                </Text>
               </Text>
             </View>
           </View>
 
           {/* Botón de Instagram */}
           <TouchableOpacity
-            style={styles.instagramButton}
+            style={[
+              styles.instagramButton,
+              {
+                backgroundColor: colors.dangerBg,
+                borderColor: alpha(colors.danger, 0.3),
+              },
+            ]}
             onPress={() => {
               Linking.openURL('https://www.instagram.com/cristian_mr17?igsi=cW9wZmQzMHdwM3ph');
             }}
@@ -315,29 +524,37 @@ export const SettingsScreen: React.FC = () => {
               <CustomIcon name="Instagram" size={18} color="#FFFFFF" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.instagramBtnTitle}>Seguir al Creador</Text>
-              <Text style={styles.instagramBtnSub}>@cristian_mr17 en Instagram</Text>
+              <Text style={[styles.instagramBtnTitle, { color: colors.textPrimary }]}>
+                Seguir al Creador
+              </Text>
+              <Text style={[styles.instagramBtnSub, { color: colors.dangerLight }]}>
+                @cristian_mr17 en Instagram
+              </Text>
             </View>
-            <CustomIcon name="ExternalLink" size={16} color="#F43F5E" />
+            <CustomIcon name="ExternalLink" size={16} color={colors.danger} />
           </TouchableOpacity>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Versión</Text>
-            <Text style={styles.infoValue}>1.0.0 (Android Ready)</Text>
+          <View style={[styles.infoRow, { borderBottomColor: colors.divider }]}>
+            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Versión</Text>
+            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+              1.0.0 (Android Ready)
+            </Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Motor Financiero</Text>
-            <Text style={styles.infoValue}>Amortización Francesa & E.M.</Text>
+          <View style={[styles.infoRow, { borderBottomColor: colors.divider }]}>
+            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Motor Financiero</Text>
+            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+              Amortización Francesa & E.M.
+            </Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Base de Datos</Text>
-            <Text style={styles.infoValue}>SQLite Local (Offline First)</Text>
+          <View style={[styles.infoRow, { borderBottomColor: colors.divider }]}>
+            <Text style={[styles.infoLabel, { color: colors.textMuted }]}>Base de Datos</Text>
+            <Text style={[styles.infoValue, { color: colors.textPrimary }]}>
+              SQLite Local (Offline First)
+            </Text>
           </View>
         </View>
-
-        <View style={{ height: 90 }} />
       </ScrollView>
 
       <ManageCategoriesModal
@@ -351,7 +568,6 @@ export const SettingsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
   },
   container: {
     flex: 1,
@@ -361,77 +577,76 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   tag: {
-    color: '#818CF8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     letterSpacing: 1,
   },
   title: {
-    color: '#FFFFFF',
     fontSize: 22,
     fontWeight: 'bold',
   },
   card: {
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   cardTitle: {
-    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: 'bold',
     marginBottom: 4,
   },
   cardSubtitle: {
-    color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 13,
     marginBottom: 14,
-    lineHeight: 18,
+    lineHeight: 19,
+  },
+  themeSelectorRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  themeOption: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    gap: 4,
+  },
+  themeOptionTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  themeOptionSub: {
+    fontSize: 13,
   },
   currencyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surfaceElevated,
     padding: 12,
+    minHeight: Layout.minTouchHeight,
     borderRadius: 10,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#334155',
-  },
-  currencyRowSelected: {
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-    borderColor: '#818CF8',
   },
   currencyText: {
-    color: '#CBD5E1',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '500',
-  },
-  currencyTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
   },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surfaceElevated,
     padding: 12,
     borderRadius: 12,
     marginBottom: 10,
     gap: 12,
   },
-  actionRowDanger: {
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
-  },
   actionIconBox: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: 10,
-    backgroundColor: 'rgba(129, 140, 248, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -439,42 +654,35 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   actionTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   actionSub: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginTop: 1,
+    fontSize: 13,
+    marginTop: 2,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
   },
   infoLabel: {
-    color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 13,
   },
   infoValue: {
-    color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
   },
   creatorCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#0F172A',
     borderRadius: 14,
     padding: 12,
     marginTop: 8,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#334155',
   },
   creatorAppLogo: {
     width: 46,
@@ -482,29 +690,24 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   creatorAppTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 'bold',
   },
   creatorAuthorText: {
-    color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 13,
     marginTop: 2,
   },
   creatorNameText: {
-    color: '#34D399',
     fontWeight: 'bold',
   },
   instagramButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(244, 63, 94, 0.12)',
     borderRadius: 12,
     padding: 10,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(244, 63, 94, 0.3)',
   },
   instagramIconBadge: {
     width: 34,
@@ -515,27 +718,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   instagramBtnTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   instagramBtnSub: {
-    color: '#FDA4AF',
-    fontSize: 11,
+    fontSize: 13,
     marginTop: 1,
   },
   divider: {
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     marginVertical: 6,
   },
   releaseBadgeCard: {
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
     borderRadius: 14,
     padding: 12,
     marginVertical: 4,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.25)',
   },
   releaseHeaderRow: {
     flexDirection: 'row',
@@ -544,25 +742,22 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   releasePill: {
-    backgroundColor: '#6366F1',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
   releasePillText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   releaseDateText: {
-    color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '500',
   },
   releaseCodeName: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 8,
   },
@@ -575,9 +770,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   highlightText: {
-    color: '#CBD5E1',
-    fontSize: 11,
+    fontSize: 13,
     flex: 1,
-    lineHeight: 15,
+    lineHeight: 18,
   },
 });

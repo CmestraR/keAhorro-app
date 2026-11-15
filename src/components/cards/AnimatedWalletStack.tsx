@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   Animated,
   Easing,
   Dimensions,
@@ -13,8 +11,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { CreditCard, CardStatementSummary, CardPurchase } from '../../types/finance';
 import { formatCurrency } from '../../utils/formatters';
 import { useFinancial } from '../../context/FinancialContext';
-import { Theme } from '../common/Theme';
+import { useAppTheme } from '../../context/ThemeContext';
+import { Theme, Layout, alpha } from '../common/Theme';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
+import { AnimatedBar } from '../common/AnimatedBar';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width - 32;
@@ -219,15 +221,10 @@ const RealisticCardFace: React.FC<RealisticCardFaceProps> = ({
         </View>
 
         <View style={styles.miniProgressTrack}>
-          <View
-            style={[
-              styles.miniProgressFill,
-              {
-                width: `${100 - usedPercentage}%`,
-                backgroundColor:
-                  usedPercentage > 85 ? '#EF4444' : usedPercentage > 60 ? '#F59E0B' : '#34D399',
-              },
-            ]}
+          <AnimatedBar
+            percent={100 - usedPercentage}
+            color={usedPercentage > 85 ? '#F43F5E' : usedPercentage > 60 ? '#F59E0B' : '#34D399'}
+            style={styles.miniProgressFill}
           />
         </View>
       </View>
@@ -267,6 +264,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
   onOpenCreateCard,
 }) => {
   const { isBalanceHidden } = useFinancial();
+  const { colors } = useAppTheme();
 
   // Orden de las tarjetas: el primer elemento es la Tarjeta Activa (arriba),
   // y el resto conforman el Mazo Inferior (stack).
@@ -416,15 +414,15 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
       : 'Facturado este Mes:';
 
   // Estado del extracto de la tarjeta activa
-  let statusBadge = { label: 'AL DÍA', color: '#10B981', bg: 'rgba(16, 185, 129, 0.16)' };
+  let statusBadge = { label: 'AL DÍA', color: colors.success, bg: colors.successBg };
   if (activeStmt?.statementStatus === 'paid') {
-    statusBadge = { label: 'EXTRACTO PAGADO', color: '#10B981', bg: 'rgba(16, 185, 129, 0.22)' };
+    statusBadge = { label: 'EXTRACTO PAGADO', color: colors.success, bg: colors.successBg };
   } else if (activeStmt?.statementStatus === 'minimum_covered') {
-    statusBadge = { label: 'MÍNIMO CUBIERTO', color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.22)' };
+    statusBadge = { label: 'MÍNIMO CUBIERTO', color: colors.info, bg: colors.infoBg };
   } else if (activeStmt?.statementStatus === 'overdue') {
-    statusBadge = { label: 'VENCIDO', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.22)' };
+    statusBadge = { label: 'VENCIDO', color: colors.danger, bg: colors.dangerBg };
   } else if (activeStmt?.statementStatus === 'partially_paid') {
-    statusBadge = { label: 'ABONO PARCIAL', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.22)' };
+    statusBadge = { label: 'ABONO PARCIAL', color: colors.warning, bg: colors.warningBg };
   }
 
   const primaryAmbientColor =
@@ -451,7 +449,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
             backgroundColor: primaryAmbientColor,
             opacity: ambientPulse.interpolate({
               inputRange: [0, 1],
-              outputRange: [0.08, 0.24],
+              outputRange: [0.06, 0.18],
             }),
           },
         ]}
@@ -466,9 +464,14 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
             </Text>
           </View>
           {creditCards.length > 1 && (
-            <View style={styles.cardCounterPill}>
-              <CustomIcon name="Layers" size={11} color="#94A3B8" />
-              <Text style={styles.cardCounterText}>
+            <View
+              style={[
+                styles.cardCounterPill,
+                { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+              ]}
+            >
+              <CustomIcon name="Layers" size={12} color={colors.textMuted} />
+              <Text style={[styles.cardCounterText, { color: colors.textSecondary }]}>
                 1 de {creditCards.length}
               </Text>
             </View>
@@ -477,18 +480,28 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
 
         <View style={styles.topActionsGroup}>
           <TouchableOpacity
-            style={styles.iconBtnSmall}
+            style={[
+              styles.iconBtnSmall,
+              { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+            ]}
             onPress={() => onEditCard(activeCard)}
           >
-            <CustomIcon name="Edit3" size={13} color="#CBD5E1" />
-            <Text style={styles.iconBtnSmallText}>Editar</Text>
+            <CustomIcon name="Edit3" size={13} color={colors.textSecondary} />
+            <Text style={[styles.iconBtnSmallText, { color: colors.textSecondary }]}>Editar</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.iconBtnSmall, styles.iconBtnDanger]}
+            style={[
+              styles.iconBtnSmall,
+              {
+                backgroundColor: colors.dangerBg,
+                borderColor: alpha(colors.danger, 0.3),
+                paddingHorizontal: 8,
+              },
+            ]}
             onPress={() => onDeleteCard(activeCard)}
           >
-            <CustomIcon name="Trash2" size={13} color="#EF4444" />
+            <CustomIcon name="Trash2" size={13} color={colors.danger} />
           </TouchableOpacity>
         </View>
       </View>
@@ -528,13 +541,18 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
               onPress={() => setBalanceMode('available')}
               style={[
                 styles.metricSwitchPill,
-                balanceMode === 'available' && styles.metricSwitchPillActive,
+                { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                balanceMode === 'available' && {
+                  backgroundColor: alpha(colors.primary, 0.18),
+                  borderColor: colors.primaryLight,
+                },
               ]}
             >
               <Text
                 style={[
                   styles.metricSwitchText,
-                  balanceMode === 'available' && styles.metricSwitchTextActive,
+                  { color: colors.textMuted },
+                  balanceMode === 'available' && { color: colors.textPrimary, fontWeight: '700' },
                 ]}
               >
                 Disponible
@@ -545,13 +563,18 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
               onPress={() => setBalanceMode('debt')}
               style={[
                 styles.metricSwitchPill,
-                balanceMode === 'debt' && styles.metricSwitchPillActive,
+                { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                balanceMode === 'debt' && {
+                  backgroundColor: alpha(colors.primary, 0.18),
+                  borderColor: colors.primaryLight,
+                },
               ]}
             >
               <Text
                 style={[
                   styles.metricSwitchText,
-                  balanceMode === 'debt' && styles.metricSwitchTextActive,
+                  { color: colors.textMuted },
+                  balanceMode === 'debt' && { color: colors.textPrimary, fontWeight: '700' },
                 ]}
               >
                 Deuda Total
@@ -562,13 +585,18 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
               onPress={() => setBalanceMode('billed')}
               style={[
                 styles.metricSwitchPill,
-                balanceMode === 'billed' && styles.metricSwitchPillActive,
+                { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                balanceMode === 'billed' && {
+                  backgroundColor: alpha(colors.primary, 0.18),
+                  borderColor: colors.primaryLight,
+                },
               ]}
             >
               <Text
                 style={[
                   styles.metricSwitchText,
-                  balanceMode === 'billed' && styles.metricSwitchTextActive,
+                  { color: colors.textMuted },
+                  balanceMode === 'billed' && { color: colors.textPrimary, fontWeight: '700' },
                 ]}
               >
                 Facturado
@@ -576,18 +604,21 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.balanceCaption}>{displayedMetricLabel}</Text>
+          <Text style={[styles.balanceCaption, { color: colors.textSecondary }]}>
+            {displayedMetricLabel}
+          </Text>
           <AnimatedRollingNumber
             value={displayedMetricValue}
             currency={activeCard.currency || currency}
             isHidden={isBalanceHidden}
             style={[
               styles.rollingBalanceText,
-              balanceMode === 'debt' && totalDebt > 0 && { color: '#F87171' },
-              balanceMode === 'billed' && billedThisMonth > 0 && { color: '#FBBF24' },
+              { color: colors.textPrimary },
+              balanceMode === 'debt' && totalDebt > 0 && { color: colors.danger },
+              balanceMode === 'billed' && billedThisMonth > 0 && { color: colors.warning },
             ]}
           />
-          <Text style={styles.totalLimitSubtext}>
+          <Text style={[styles.totalLimitSubtext, { color: colors.textMuted }]}>
             Cupo Total:{' '}
             {isBalanceHidden
               ? '••••••'
@@ -597,11 +628,14 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
 
         {/* Botón cuadrado redondeado con flecha de acción (como en el video a la derecha del Balance) */}
         <TouchableOpacity
-          style={styles.quickShareArrowBtn}
+          style={[
+            styles.quickShareArrowBtn,
+            { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+          ]}
           onPress={() => onOpenPay(activeCard)}
           activeOpacity={0.8}
         >
-          <CustomIcon name="ArrowUpRight" size={22} color="#FFFFFF" />
+          <CustomIcon name="ArrowUpRight" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -609,10 +643,10 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
       {stackCards.length > 0 ? (
         <View style={styles.stackSectionWrapper} {...stackPanResponder.panHandlers}>
           <View style={styles.stackHeaderRow}>
-            <Text style={styles.stackHintTitle}>
+            <Text style={[styles.stackHintTitle, { color: colors.textSecondary }]}>
               Mazo de Tarjetas ({stackCards.length} más)
             </Text>
-            <Text style={styles.stackHintSub}>
+            <Text style={[styles.stackHintSub, { color: colors.primaryLight }]}>
               Toca o desliza una tarjeta para subirla
             </Text>
           </View>
@@ -679,22 +713,24 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
                     onPress={() => selectCardFromStack(c.id)}
                     style={[
                       styles.cardQuickChip,
+                      { backgroundColor: colors.surfaceCard, borderColor: colors.border },
                       isCurrent && {
-                        backgroundColor: 'rgba(99, 102, 241, 0.25)',
-                        borderColor: '#818CF8',
+                        backgroundColor: alpha(colors.primary, 0.2),
+                        borderColor: colors.primaryLight,
                       },
                     ]}
                   >
                     <View
                       style={[
                         styles.chipColorDot,
-                        { backgroundColor: c.colorGradient?.[0] || '#6366F1' },
+                        { backgroundColor: c.colorGradient?.[0] || colors.primary },
                       ]}
                     />
                     <Text
                       style={[
                         styles.cardQuickChipText,
-                        isCurrent && { color: '#FFFFFF', fontWeight: 'bold' },
+                        { color: colors.textSecondary },
+                        isCurrent && { color: colors.textPrimary, fontWeight: 'bold' },
                       ]}
                       numberOfLines={1}
                     >
@@ -709,49 +745,64 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
       ) : (
         /* Si solo tiene 1 tarjeta, mostramos invitación sutil para sumar otra al mazo */
         <TouchableOpacity
-          style={styles.singleCardAddDeckHint}
+          style={[
+            styles.singleCardAddDeckHint,
+            {
+              backgroundColor: alpha(colors.primary, 0.08),
+              borderColor: alpha(colors.primary, 0.35),
+            },
+          ]}
           onPress={onOpenCreateCard}
           activeOpacity={0.8}
         >
-          <CustomIcon name="Layers" size={16} color="#818CF8" />
-          <Text style={styles.singleCardAddDeckText}>
+          <CustomIcon name="Layers" size={16} color={colors.primaryLight} />
+          <Text style={[styles.singleCardAddDeckText, { color: colors.textSecondary }]}>
             Agrega otra tarjeta para activar el mazo interactivo apilado
           </Text>
-          <CustomIcon name="Plus" size={15} color="#818CF8" />
+          <CustomIcon name="Plus" size={15} color={colors.primaryLight} />
         </TouchableOpacity>
       )}
 
       {/* 4. BARRA DE ACCIONES OPERATIVAS DE LA TARJETA ACTIVA */}
       <View style={styles.cardActionsBar}>
         <TouchableOpacity
-          style={[styles.cardActionBtn, styles.cardActionBtnPrimary]}
+          style={[
+            styles.cardActionBtn,
+            { backgroundColor: colors.primary, borderColor: colors.primary },
+          ]}
           onPress={() => onOpenPay(activeCard)}
           activeOpacity={0.7}
         >
-          <CustomIcon name="CreditCard" size={13} color="#FFFFFF" />
+          <CustomIcon name="CreditCard" size={14} color="#FFFFFF" />
           <Text style={styles.cardActionBtnTextPrimary} numberOfLines={1}>
             Pagar
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.cardActionBtn}
+          style={[
+            styles.cardActionBtn,
+            { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+          ]}
           onPress={() => onOpenStatement(activeCard)}
           activeOpacity={0.7}
         >
-          <CustomIcon name="FileText" size={13} color="#CBD5E1" />
-          <Text style={styles.cardActionBtnText} numberOfLines={1}>
+          <CustomIcon name="FileText" size={14} color={colors.textSecondary} />
+          <Text style={[styles.cardActionBtnText, { color: colors.textSecondary }]} numberOfLines={1}>
             Extracto
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.cardActionBtn}
+          style={[
+            styles.cardActionBtn,
+            { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+          ]}
           onPress={() => onOpenReconcile(activeCard)}
           activeOpacity={0.7}
         >
-          <CustomIcon name="ShieldCheck" size={13} color="#CBD5E1" />
-          <Text style={styles.cardActionBtnText} numberOfLines={1}>
+          <CustomIcon name="ShieldCheck" size={14} color={colors.textSecondary} />
+          <Text style={[styles.cardActionBtnText, { color: colors.textSecondary }]} numberOfLines={1}>
             Conciliar
           </Text>
         </TouchableOpacity>
@@ -759,36 +810,43 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
 
       {/* 5. COMPRAS A CUOTAS DE LA TARJETA ACTIVA */}
       {activeCardPurchases.length > 0 && (
-        <View style={styles.cardPurchasesList}>
+        <View
+          style={[
+            styles.cardPurchasesList,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
           <View style={styles.purchasesHeaderRow}>
-            <Text style={styles.cardPurchasesTitle}>
+            <Text style={[styles.cardPurchasesTitle, { color: colors.textSecondary }]}>
               Compras a Cuotas en {activeCard.name} ({activeCardPurchases.length})
             </Text>
             <TouchableOpacity onPress={onOpenAddPurchase}>
-              <Text style={styles.addPurchaseInlineLink}>+ Nueva</Text>
+              <Text style={[styles.addPurchaseInlineLink, { color: colors.primaryLight }]}>
+                + Nueva
+              </Text>
             </TouchableOpacity>
           </View>
 
           {activeCardPurchases.map((p) => (
             <TouchableOpacity
               key={p.id}
-              style={styles.purchaseRow}
+              style={[styles.purchaseRow, { borderTopColor: colors.divider }]}
               onPress={() => onOpenAmortization(p)}
               activeOpacity={0.7}
             >
               <View style={styles.pLeft}>
-                <Text style={styles.pTitle}>{p.description}</Text>
-                <Text style={styles.pSub}>
+                <Text style={[styles.pTitle, { color: colors.textPrimary }]}>{p.description}</Text>
+                <Text style={[styles.pSub, { color: colors.textSecondary }]}>
                   Cuota {p.installmentsPaid} de {p.installmentsTotal} ({p.interestRateMonthly}% E.M.)
                 </Text>
               </View>
               <View style={styles.pRight}>
-                <Text style={styles.pQuota}>
+                <Text style={[styles.pQuota, { color: colors.successLight }]}>
                   {formatCurrency(p.monthlyInstallmentAmount, currency)}/m
                 </Text>
                 <View style={styles.detailsBadge}>
-                  <Text style={styles.detailsText}>Ver tabla</Text>
-                  <CustomIcon name="ChevronRight" size={12} color="#818CF8" />
+                  <Text style={[styles.detailsText, { color: colors.primaryLight }]}>Ver tabla</Text>
+                  <CustomIcon name="ChevronRight" size={13} color={colors.primaryLight} />
                 </View>
               </View>
             </TouchableOpacity>

@@ -2,11 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  TextInput,
   Alert,
   Switch,
 } from 'react-native';
@@ -17,6 +14,8 @@ import { calculateMonthlyQuota, generateAmortizationSchedule } from '../../utils
 import { formatCurrency, formatInputNumber, parseInputNumber } from '../../utils/formatters';
 import { Theme } from '../common/Theme';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text, TextInput } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 import { ParsedBankMessage } from '../../utils/bankNotificationParser';
 import { predictCategory } from '../../utils/aiCategorizer';
 

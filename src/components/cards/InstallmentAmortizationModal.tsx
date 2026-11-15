@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
   Alert,
   ActivityIndicator,
@@ -15,6 +13,8 @@ import { useFinancial } from '../../context/FinancialContext';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { Theme } from '../common/Theme';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 
 interface InstallmentAmortizationModalProps {
   visible: boolean;

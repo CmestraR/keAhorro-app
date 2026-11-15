@@ -1,10 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Account } from '../../types/finance';
 import { useFinancial } from '../../context/FinancialContext';
+import { useAppTheme } from '../../context/ThemeContext';
 import { formatCurrency } from '../../utils/formatters';
-import { Theme } from '../common/Theme';
+import { alpha } from '../common/Theme';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 
 interface AccountMiniCardProps {
   account: Account;
@@ -12,13 +15,14 @@ interface AccountMiniCardProps {
   onPayDebt?: () => void;
 }
 
-export const MINI_CARD_WIDTH = 150;
+export const MINI_CARD_WIDTH = 158;
 
 /**
  * Versión compacta de una cuenta (logo + saldo) para carrusel horizontal.
  */
 export const AccountMiniCard: React.FC<AccountMiniCardProps> = ({ account, onPress, onPayDebt }) => {
   const { currency, isBalanceHidden } = useFinancial();
+  const { colors } = useAppTheme();
 
   const isDebt = account.type === 'debt';
   const debtOwed = Math.abs(account.balance);
@@ -33,32 +37,48 @@ export const AccountMiniCard: React.FC<AccountMiniCardProps> = ({ account, onPre
 
   return (
     <TouchableOpacity
-      style={[styles.card, isDebt && styles.debtCard]}
+      style={[
+        styles.card,
+        {
+          backgroundColor: isDebt ? colors.debtSurface : colors.surfaceCard,
+          borderColor: isDebt ? alpha(colors.danger, 0.35) : colors.border,
+        },
+      ]}
       onPress={onPress}
       activeOpacity={0.8}
     >
       <View style={styles.topRow}>
-        <View style={[styles.iconBox, { backgroundColor: (account.color || '#6366F1') + '20' }]}>
+        <View style={[styles.iconBox, { backgroundColor: alpha(account.color || colors.primary, 0.16) }]}>
           <CustomIcon
             name={account.icon || (isDebt ? 'Receipt' : 'Landmark')}
             size={16}
-            color={account.color || '#6366F1'}
+            color={account.color || colors.primary}
           />
         </View>
         {isDebt && onPayDebt && debtOwed > 0 && (
-          <TouchableOpacity style={styles.payBtn} onPress={onPayDebt} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={[styles.payBtn, { backgroundColor: colors.success }]}
+            onPress={onPayDebt}
+            activeOpacity={0.8}
+          >
             <Text style={styles.payBtnText}>Abonar</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      <Text style={styles.name} numberOfLines={1}>
+      <Text style={[styles.name, { color: colors.textSecondary }]} numberOfLines={1}>
         {account.name}
       </Text>
       <Text
         style={[
           styles.balance,
-          isDebt && { color: debtOwed > 0 ? '#EF4444' : '#10B981' },
+          {
+            color: isDebt
+              ? debtOwed > 0
+                ? colors.danger
+                : colors.success
+              : colors.successLight,
+          },
         ]}
         numberOfLines={1}
       >
@@ -71,15 +91,9 @@ export const AccountMiniCard: React.FC<AccountMiniCardProps> = ({ account, onPre
 const styles = StyleSheet.create({
   card: {
     width: MINI_CARD_WIDTH,
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 14,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#1E293B',
-  },
-  debtCard: {
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    backgroundColor: '#16131E',
   },
   topRow: {
     flexDirection: 'row',
@@ -88,30 +102,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   iconBox: {
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: 9,
     justifyContent: 'center',
     alignItems: 'center',
   },
   payBtn: {
-    backgroundColor: '#10B981',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   payBtnText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   name: {
-    color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600',
   },
   balance: {
-    color: '#34D399',
     fontSize: 15,
     fontWeight: 'bold',
     marginTop: 2,

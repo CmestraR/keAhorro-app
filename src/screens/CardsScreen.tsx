@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
 } from 'react-native';
 import { useFinancial } from '../context/FinancialContext';
 import { useAlert } from '../context/AlertContext';
+import { useAppTheme } from '../context/ThemeContext';
 import { formatCurrency } from '../utils/formatters';
-import { Theme } from '../components/common/Theme';
+import { Layout, alpha } from '../components/common/Theme';
 import { CustomIcon } from '../components/common/CustomIcon';
+import { Text } from '../components/common/AppText';
+import { TouchableOpacity } from '../components/common/Touchable';
+import { AnimatedBar } from '../components/common/AnimatedBar';
 import { CreditCardVisual } from '../components/cards/CreditCardVisual';
 import { AnimatedWalletStack } from '../components/cards/AnimatedWalletStack';
 import { AddCreditCardModal } from '../components/cards/AddCreditCardModal';
@@ -33,6 +33,7 @@ export const CardsScreen: React.FC = () => {
     currency,
   } = useFinancial();
   const { showConfirm, showSuccess } = useAlert();
+  const { colors } = useAppTheme();
 
   const [addCardModalVisible, setAddCardModalVisible] = useState(false);
   const [selectedCardToEdit, setSelectedCardToEdit] = useState<CreditCard | null>(null);
@@ -63,6 +64,7 @@ export const CardsScreen: React.FC = () => {
   const totalAvailable = creditCards.reduce((sum, c) => sum + c.availableLimit, 0);
   const totalUsedDebt = totalCreditLimit - totalAvailable;
   const totalPaymentThisMonth = cardStatements.reduce((sum, s) => sum + s.totalToPayThisMonth, 0);
+  const availablePercent = totalCreditLimit > 0 ? (totalAvailable / totalCreditLimit) * 100 : 0;
 
   const handleOpenCreateCard = () => {
     setSelectedCardToEdit(null);
@@ -133,16 +135,20 @@ export const CardsScreen: React.FC = () => {
   };
 
   return (
-    <View style={styles.safeArea}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: Layout.bottomNavSpace }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.header}>
           <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={styles.tag}>GESTIÓN DE CRÉDITO</Text>
-            <Text style={styles.title}>Tarjetas</Text>
+            <Text style={[styles.tag, { color: colors.primaryLight }]}>GESTIÓN DE CRÉDITO</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>Tarjetas</Text>
           </View>
           <TouchableOpacity
-            style={styles.addCardBtn}
+            style={[styles.addCardBtn, { backgroundColor: colors.primary }]}
             onPress={handleOpenCreateCard}
           >
             <CustomIcon name="Plus" size={16} color="#FFFFFF" />
@@ -151,20 +157,31 @@ export const CardsScreen: React.FC = () => {
         </View>
 
         {/* Resumen Global de Tarjetas */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>Resumen Consolidado de Crédito</Text>
+        <View
+          style={[
+            styles.summaryCard,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.summaryTitle, { color: colors.textPrimary }]}>
+            Resumen Consolidado de Crédito
+          </Text>
 
           <View style={styles.statsGrid}>
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Total Facturado Pendiente</Text>
-              <Text style={[styles.statValue, { color: '#F59E0B' }]}>
+            <View style={[styles.statBox, { backgroundColor: colors.surfaceElevated }]}>
+              <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+                Total Facturado Pendiente
+              </Text>
+              <Text style={[styles.statValue, { color: colors.warning }]}>
                 {formatCurrency(totalPaymentThisMonth, currency)}
               </Text>
             </View>
 
-            <View style={styles.statBox}>
-              <Text style={styles.statLabel}>Deuda Total Acumulada</Text>
-              <Text style={[styles.statValue, { color: '#EF4444' }]}>
+            <View style={[styles.statBox, { backgroundColor: colors.surfaceElevated }]}>
+              <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+                Deuda Total Acumulada
+              </Text>
+              <Text style={[styles.statValue, { color: colors.danger }]}>
                 {formatCurrency(totalUsedDebt, currency)}
               </Text>
             </View>
@@ -172,19 +189,18 @@ export const CardsScreen: React.FC = () => {
 
           <View style={styles.limitBarSection}>
             <View style={styles.limitRow}>
-              <Text style={styles.limitSub}>Cupo Total: {formatCurrency(totalCreditLimit, currency)}</Text>
-              <Text style={[styles.limitSub, { color: '#10B981', fontWeight: 'bold' }]}>
+              <Text style={[styles.limitSub, { color: colors.textSecondary }]}>
+                Cupo Total: {formatCurrency(totalCreditLimit, currency)}
+              </Text>
+              <Text style={[styles.limitSub, { color: colors.success, fontWeight: 'bold' }]}>
                 Disponible: {formatCurrency(totalAvailable, currency)}
               </Text>
             </View>
-            <View style={styles.barBg}>
-              <View
-                style={[
-                  styles.barFill,
-                  {
-                    width: `${totalCreditLimit > 0 ? (totalAvailable / totalCreditLimit) * 100 : 0}%`,
-                  },
-                ]}
+            <View style={[styles.barBg, { backgroundColor: colors.inset }]}>
+              <AnimatedBar
+                percent={availablePercent}
+                color={colors.success}
+                style={styles.barFill}
               />
             </View>
           </View>
@@ -193,24 +209,32 @@ export const CardsScreen: React.FC = () => {
         {/* Tarjetas de Crédito Registradas */}
         <View style={styles.sectionHeadingRow}>
           <View style={styles.headingLeftGroup}>
-            <Text style={styles.sectionHeading}>Tus Tarjetas ({creditCards.length})</Text>
+            <Text style={[styles.sectionHeading, { color: colors.textPrimary }]}>
+              Tus Tarjetas ({creditCards.length})
+            </Text>
             {creditCards.length > 0 && (
-              <View style={styles.viewModeSwitch}>
+              <View
+                style={[
+                  styles.viewModeSwitch,
+                  { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                ]}
+              >
                 <TouchableOpacity
                   style={[
                     styles.viewModeBtn,
-                    viewMode === 'wallet' && styles.viewModeBtnActive,
+                    viewMode === 'wallet' && { backgroundColor: colors.primary },
                   ]}
                   onPress={() => setViewMode('wallet')}
                 >
                   <CustomIcon
                     name="Layers"
-                    size={12}
-                    color={viewMode === 'wallet' ? '#FFFFFF' : '#94A3B8'}
+                    size={13}
+                    color={viewMode === 'wallet' ? '#FFFFFF' : colors.textMuted}
                   />
                   <Text
                     style={[
                       styles.viewModeBtnText,
+                      { color: colors.textMuted },
                       viewMode === 'wallet' && styles.viewModeBtnTextActive,
                     ]}
                   >
@@ -221,18 +245,19 @@ export const CardsScreen: React.FC = () => {
                 <TouchableOpacity
                   style={[
                     styles.viewModeBtn,
-                    viewMode === 'list' && styles.viewModeBtnActive,
+                    viewMode === 'list' && { backgroundColor: colors.primary },
                   ]}
                   onPress={() => setViewMode('list')}
                 >
                   <CustomIcon
                     name="List"
-                    size={12}
-                    color={viewMode === 'list' ? '#FFFFFF' : '#94A3B8'}
+                    size={13}
+                    color={viewMode === 'list' ? '#FFFFFF' : colors.textMuted}
                   />
                   <Text
                     style={[
                       styles.viewModeBtnText,
+                      { color: colors.textMuted },
                       viewMode === 'list' && styles.viewModeBtnTextActive,
                     ]}
                   >
@@ -244,23 +269,35 @@ export const CardsScreen: React.FC = () => {
           </View>
 
           <TouchableOpacity
-            style={styles.newPurchaseQuick}
+            style={[
+              styles.newPurchaseQuick,
+              { backgroundColor: alpha(colors.primary, 0.15) },
+            ]}
             onPress={() => setAddPurchaseModalVisible(true)}
           >
-            <CustomIcon name="ShoppingBag" size={14} color="#818CF8" />
-            <Text style={styles.newPurchaseQuickText}>+ Compra</Text>
+            <CustomIcon name="ShoppingBag" size={14} color={colors.primaryLight} />
+            <Text style={[styles.newPurchaseQuickText, { color: colors.primaryLight }]}>
+              + Compra
+            </Text>
           </TouchableOpacity>
         </View>
 
         {creditCards.length === 0 ? (
-          <View style={styles.emptyState}>
-            <CustomIcon name="CreditCard" size={36} color="#64748B" />
-            <Text style={styles.emptyTitle}>Sin tarjetas registradas</Text>
-            <Text style={styles.emptyText}>
+          <View
+            style={[
+              styles.emptyState,
+              { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+            ]}
+          >
+            <CustomIcon name="CreditCard" size={36} color={colors.textMuted} />
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+              Sin tarjetas registradas
+            </Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
               Agrega tus tarjetas de crédito para simular cuotas, imputación de pagos, conciliación y extractos.
             </Text>
             <TouchableOpacity
-              style={styles.emptyBtn}
+              style={[styles.emptyBtn, { backgroundColor: colors.primary }]}
               onPress={() => setAddCardModalVisible(true)}
             >
               <Text style={styles.emptyBtnText}>Agregar Tarjeta</Text>
@@ -288,15 +325,15 @@ export const CardsScreen: React.FC = () => {
             const cardPurchases = activePurchases.filter((p) => p.cardId === card.id);
 
             // Estado del extracto
-            let statusBadge = { label: 'AL DÍA', color: '#10B981', bg: 'rgba(16, 185, 129, 0.15)' };
+            let statusBadge = { label: 'AL DÍA', color: colors.success, bg: colors.successBg };
             if (stmt?.statementStatus === 'paid') {
-              statusBadge = { label: 'EXTRACTO PAGADO', color: '#10B981', bg: 'rgba(16, 185, 129, 0.2)' };
+              statusBadge = { label: 'EXTRACTO PAGADO', color: colors.success, bg: colors.successBg };
             } else if (stmt?.statementStatus === 'minimum_covered') {
-              statusBadge = { label: 'MÍNIMO CUBIERTO', color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.2)' };
+              statusBadge = { label: 'MÍNIMO CUBIERTO', color: colors.info, bg: colors.infoBg };
             } else if (stmt?.statementStatus === 'overdue') {
-              statusBadge = { label: 'VENCIDO', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.2)' };
+              statusBadge = { label: 'VENCIDO', color: colors.danger, bg: colors.dangerBg };
             } else if (stmt?.statementStatus === 'partially_paid') {
-              statusBadge = { label: 'ABONO PARCIAL', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.2)' };
+              statusBadge = { label: 'ABONO PARCIAL', color: colors.warning, bg: colors.warningBg };
             }
 
             return (
@@ -311,19 +348,32 @@ export const CardsScreen: React.FC = () => {
 
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <TouchableOpacity
-                      style={styles.editCardBtn}
+                      style={[
+                        styles.editCardBtn,
+                        { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                      ]}
                       onPress={() => handleOpenEditCard(card)}
                     >
-                      <CustomIcon name="Edit3" size={13} color="#CBD5E1" />
-                      <Text style={styles.editCardBtnText}>Editar</Text>
+                      <CustomIcon name="Edit3" size={14} color={colors.textSecondary} />
+                      <Text style={[styles.editCardBtnText, { color: colors.textSecondary }]}>
+                        Editar
+                      </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.deleteCardBtn}
+                      style={[
+                        styles.deleteCardBtn,
+                        {
+                          backgroundColor: colors.dangerBg,
+                          borderColor: alpha(colors.danger, 0.3),
+                        },
+                      ]}
                       onPress={() => handleDeleteCard(card)}
                     >
-                      <CustomIcon name="Trash2" size={13} color="#EF4444" />
-                      <Text style={styles.deleteCardBtnText}>Eliminar</Text>
+                      <CustomIcon name="Trash2" size={14} color={colors.danger} />
+                      <Text style={[styles.deleteCardBtnText, { color: colors.danger }]}>
+                        Eliminar
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -340,34 +390,49 @@ export const CardsScreen: React.FC = () => {
                 {/* Barra de Acciones de Tarjeta */}
                 <View style={styles.cardActionsBar}>
                   <TouchableOpacity
-                    style={[styles.cardActionBtn, styles.cardActionBtnPrimary]}
+                    style={[
+                      styles.cardActionBtn,
+                      { backgroundColor: colors.primary, borderColor: colors.primary },
+                    ]}
                     onPress={() => handleOpenPay(card)}
                     activeOpacity={0.7}
                   >
-                    <CustomIcon name="CreditCard" size={12} color="#FFFFFF" />
+                    <CustomIcon name="CreditCard" size={14} color="#FFFFFF" />
                     <Text style={styles.cardActionBtnTextPrimary} numberOfLines={1}>
                       Pagar
                     </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.cardActionBtn}
+                    style={[
+                      styles.cardActionBtn,
+                      { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+                    ]}
                     onPress={() => handleOpenStatement(card)}
                     activeOpacity={0.7}
                   >
-                    <CustomIcon name="FileText" size={12} color="#CBD5E1" />
-                    <Text style={styles.cardActionBtnText} numberOfLines={1}>
+                    <CustomIcon name="FileText" size={14} color={colors.textSecondary} />
+                    <Text
+                      style={[styles.cardActionBtnText, { color: colors.textSecondary }]}
+                      numberOfLines={1}
+                    >
                       Extracto
                     </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={styles.cardActionBtn}
+                    style={[
+                      styles.cardActionBtn,
+                      { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+                    ]}
                     onPress={() => handleOpenReconcile(card)}
                     activeOpacity={0.7}
                   >
-                    <CustomIcon name="ShieldCheck" size={12} color="#CBD5E1" />
-                    <Text style={styles.cardActionBtnText} numberOfLines={1}>
+                    <CustomIcon name="ShieldCheck" size={14} color={colors.textSecondary} />
+                    <Text
+                      style={[styles.cardActionBtnText, { color: colors.textSecondary }]}
+                      numberOfLines={1}
+                    >
                       Conciliar
                     </Text>
                   </TouchableOpacity>
@@ -375,28 +440,42 @@ export const CardsScreen: React.FC = () => {
 
                 {/* Compras a cuotas específicas de esta tarjeta */}
                 {cardPurchases.length > 0 && (
-                  <View style={styles.cardPurchasesList}>
-                    <Text style={styles.cardPurchasesTitle}>Compras a Cuotas en {card.name}:</Text>
+                  <View
+                    style={[
+                      styles.cardPurchasesList,
+                      { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                    ]}
+                  >
+                    <Text style={[styles.cardPurchasesTitle, { color: colors.textSecondary }]}>
+                      Compras a Cuotas en {card.name}:
+                    </Text>
                     {cardPurchases.map((p) => (
                       <TouchableOpacity
                         key={p.id}
-                        style={styles.purchaseRow}
+                        style={[
+                          styles.purchaseRow,
+                          { borderTopColor: colors.divider },
+                        ]}
                         onPress={() => handleOpenAmortization(p)}
                         activeOpacity={0.7}
                       >
                         <View style={styles.pLeft}>
-                          <Text style={styles.pTitle}>{p.description}</Text>
-                          <Text style={styles.pSub}>
+                          <Text style={[styles.pTitle, { color: colors.textPrimary }]}>
+                            {p.description}
+                          </Text>
+                          <Text style={[styles.pSub, { color: colors.textSecondary }]}>
                             Cuota {p.installmentsPaid} de {p.installmentsTotal} ({p.interestRateMonthly}% E.M.)
                           </Text>
                         </View>
                         <View style={styles.pRight}>
-                          <Text style={styles.pQuota}>
+                          <Text style={[styles.pQuota, { color: colors.successLight }]}>
                             {formatCurrency(p.monthlyInstallmentAmount, currency)}/m
                           </Text>
                           <View style={styles.detailsBadge}>
-                            <Text style={styles.detailsText}>Ver tabla</Text>
-                            <CustomIcon name="ChevronRight" size={12} color="#818CF8" />
+                            <Text style={[styles.detailsText, { color: colors.primaryLight }]}>
+                              Ver tabla
+                            </Text>
+                            <CustomIcon name="ChevronRight" size={13} color={colors.primaryLight} />
                           </View>
                         </View>
                       </TouchableOpacity>
@@ -407,8 +486,6 @@ export const CardsScreen: React.FC = () => {
             );
           })
         )}
-
-        <View style={{ height: 90 }} />
       </ScrollView>
 
       {/* Modales */}
@@ -481,7 +558,6 @@ export const CardsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
   },
   container: {
     flex: 1,
@@ -494,41 +570,35 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   tag: {
-    color: '#818CF8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     letterSpacing: 1,
   },
   title: {
-    color: '#FFFFFF',
     fontSize: 22,
     fontWeight: 'bold',
   },
   addCardBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    minHeight: Layout.minTouchHeight,
     borderRadius: 10,
-    gap: 4,
+    gap: 5,
   },
   addCardBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   summaryCard: {
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 18,
     padding: 16,
     marginBottom: 18,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   summaryTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 'bold',
     marginBottom: 12,
   },
@@ -539,13 +609,11 @@ const styles = StyleSheet.create({
   },
   statBox: {
     flex: 1,
-    backgroundColor: Theme.colors.surfaceElevated,
     borderRadius: 12,
-    padding: 10,
+    padding: 12,
   },
   statLabel: {
-    color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 13,
   },
   statValue: {
     fontSize: 16,
@@ -559,18 +627,15 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   limitSub: {
-    color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 13,
   },
   barBg: {
-    height: 7,
-    backgroundColor: '#334155',
+    height: 8,
     borderRadius: 4,
     overflow: 'hidden',
   },
   barFill: {
     height: '100%',
-    backgroundColor: '#10B981',
     borderRadius: 4,
   },
   sectionHeadingRow: {
@@ -586,26 +651,20 @@ const styles = StyleSheet.create({
   },
   viewModeSwitch: {
     flexDirection: 'row',
-    backgroundColor: '#0F172A',
     borderRadius: 10,
-    padding: 2,
+    padding: 3,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   viewModeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
   },
-  viewModeBtnActive: {
-    backgroundColor: '#4F46E5',
-  },
   viewModeBtnText: {
-    color: '#94A3B8',
-    fontSize: 10.5,
+    fontSize: 13,
     fontWeight: '600',
   },
   viewModeBtnTextActive: {
@@ -613,22 +672,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sectionHeading: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
   newPurchaseQuick: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    gap: 5,
+    paddingHorizontal: 12,
+    minHeight: 36,
+    borderRadius: 10,
   },
   newPurchaseQuickText: {
-    color: '#818CF8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   cardWrapper: {
@@ -642,49 +698,43 @@ const styles = StyleSheet.create({
   },
   statusBadgePill: {
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   statusBadgeText: {
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   editCardBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#334155',
   },
   editCardBtnText: {
-    color: '#CBD5E1',
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '600',
   },
   deleteCardBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
   deleteCardBtnText: {
-    color: '#EF4444',
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   cardActionsBar: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
     marginTop: 8,
     marginBottom: 10,
   },
@@ -693,84 +743,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    backgroundColor: Theme.colors.surfaceElevated,
+    gap: 5,
     borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 2,
+    minHeight: Layout.minTouchHeight,
+    paddingHorizontal: 6,
     borderWidth: 1,
-    borderColor: '#334155',
-  },
-  cardActionBtnPrimary: {
-    backgroundColor: Theme.colors.primary,
-    borderColor: Theme.colors.primary,
-  },
-  cardActionBtnAccent: {
-    backgroundColor: 'rgba(99, 102, 241, 0.12)',
-    borderColor: 'rgba(99, 102, 241, 0.35)',
   },
   cardActionBtnText: {
-    color: '#CBD5E1',
-    fontSize: 10.5,
+    fontSize: 13,
     fontWeight: '600',
   },
   cardActionBtnTextPrimary: {
     color: '#FFFFFF',
-    fontSize: 10.5,
-    fontWeight: 'bold',
-  },
-  openingBalanceBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.25)',
-    gap: 10,
-  },
-  openingBalanceIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: 'rgba(99, 102, 241, 0.18)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  openingBalanceTitle: {
-    color: '#FFFFFF',
-    fontSize: 12.5,
-    fontWeight: 'bold',
-  },
-  openingBalanceSub: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginTop: 2,
-    lineHeight: 15,
-  },
-  openingBalanceBtn: {
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-  },
-  openingBalanceBtnText: {
-    color: '#FFFFFF',
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   cardPurchasesList: {
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 14,
     padding: 12,
     marginTop: -6,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   cardPurchasesTitle: {
-    color: '#CBD5E1',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
     marginBottom: 8,
   },
@@ -778,29 +773,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
   },
   pLeft: {
     flex: 1,
+    marginRight: 8,
   },
   pTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
   },
   pSub: {
-    color: '#94A3B8',
-    fontSize: 11,
-    marginTop: 1,
+    fontSize: 13,
+    marginTop: 2,
   },
   pRight: {
     alignItems: 'flex-end',
   },
   pQuota: {
-    color: '#34D399',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   detailsBadge: {
@@ -810,40 +802,36 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   detailsText: {
-    color: '#818CF8',
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: '600',
   },
   emptyState: {
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 16,
     padding: 30,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   emptyTitle: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
     marginTop: 10,
   },
   emptyText: {
-    color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 13,
     textAlign: 'center',
     marginTop: 4,
     marginBottom: 16,
   },
   emptyBtn: {
-    backgroundColor: Theme.colors.primary,
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    minHeight: Layout.minTouchHeight,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: 10,
   },
   emptyBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
   },
 });

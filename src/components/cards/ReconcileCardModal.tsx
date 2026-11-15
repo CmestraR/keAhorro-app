@@ -2,11 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   Modal,
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  TextInput,
   Dimensions,
 } from 'react-native';
 import { CreditCard, CardStatementSummary } from '../../types/finance.ts';
@@ -15,6 +12,8 @@ import { useAlert } from '../../context/AlertContext.tsx';
 import { formatCurrency, formatInputNumber, parseInputNumber } from '../../utils/formatters.ts';
 import { Theme } from '../common/Theme.ts';
 import { CustomIcon } from '../common/CustomIcon.tsx';
+import { Text, TextInput } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 
 interface ReconcileCardModalProps {
   visible: boolean;

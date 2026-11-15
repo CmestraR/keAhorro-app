@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
 } from 'react-native';
 import { useFinancial } from '../context/FinancialContext';
+import { useAppTheme } from '../context/ThemeContext';
 import { formatCurrency } from '../utils/formatters';
-import { Theme } from '../components/common/Theme';
+import { Layout, alpha } from '../components/common/Theme';
 import { CustomIcon } from '../components/common/CustomIcon';
+import { Text } from '../components/common/AppText';
+import { TouchableOpacity } from '../components/common/Touchable';
 import { Account } from '../types/finance';
 import { AccountCard } from '../components/accounts/AccountCard';
 import { AddAccountModal } from '../components/accounts/AddAccountModal';
@@ -18,6 +19,7 @@ import { PayDebtModal } from '../components/accounts/PayDebtModal';
 
 export const AccountsScreen: React.FC = () => {
   const { accounts, totalBankBalance, totalOtherDebts, currency } = useFinancial();
+  const { colors } = useAppTheme();
   const [addAccountModalVisible, setAddAccountModalVisible] = useState(false);
   const [selectedAccountToEdit, setSelectedAccountToEdit] = useState<Account | null>(null);
   const [transferModalVisible, setTransferModalVisible] = useState(false);
@@ -43,57 +45,94 @@ export const AccountsScreen: React.FC = () => {
   const debtAccounts = accounts.filter((a) => a.type === 'debt');
 
   return (
-    <View style={styles.safeArea}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: Layout.bottomNavSpace }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTitleCol}>
-            <Text style={styles.tag}>MIS FONDOS & DEUDAS</Text>
-            <Text style={styles.title} numberOfLines={1}>Cuentas & Deudas</Text>
+            <Text style={[styles.tag, { color: colors.primaryLight }]}>MIS FONDOS & DEUDAS</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={1}>
+              Cuentas & Deudas
+            </Text>
           </View>
           <TouchableOpacity
-            style={styles.addBtn}
+            style={[styles.addBtn, { backgroundColor: colors.primary }]}
             onPress={handleOpenCreate}
             activeOpacity={0.8}
           >
-            <CustomIcon name="Plus" size={15} color="#FFFFFF" />
+            <CustomIcon name="Plus" size={16} color="#FFFFFF" />
             <Text style={styles.addBtnText}>Nueva</Text>
           </TouchableOpacity>
         </View>
 
         {/* Resumen Total */}
-        <View style={styles.heroCard}>
+        <View
+          style={[
+            styles.heroCard,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
           <View style={styles.heroRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.heroLabel}>SALDO DISPONIBLE EN CUENTAS</Text>
-              <Text style={styles.heroAmount}>{formatCurrency(totalBankBalance, currency)}</Text>
+              <Text style={[styles.heroLabel, { color: colors.textMuted }]}>
+                SALDO DISPONIBLE EN CUENTAS
+              </Text>
+              <Text style={[styles.heroAmount, { color: colors.textPrimary }]}>
+                {formatCurrency(totalBankBalance, currency)}
+              </Text>
             </View>
             {totalOtherDebts > 0 && (
               <View style={styles.heroDebtCol}>
-                <Text style={styles.heroDebtLabel}>DEUDAS ACTIVAS</Text>
-                <Text style={styles.heroDebtAmount}>-{formatCurrency(totalOtherDebts, currency)}</Text>
+                <Text style={[styles.heroDebtLabel, { color: colors.dangerLight }]}>
+                  DEUDAS ACTIVAS
+                </Text>
+                <Text style={[styles.heroDebtAmount, { color: colors.danger }]}>
+                  -{formatCurrency(totalOtherDebts, currency)}
+                </Text>
               </View>
             )}
           </View>
-          <Text style={styles.heroSub}>{liquidAccounts.length} cuentas disponibles • {debtAccounts.length} deudas activas</Text>
+          <Text style={[styles.heroSub, { color: colors.textSecondary }]}>
+            {liquidAccounts.length} cuentas disponibles • {debtAccounts.length} deudas activas
+          </Text>
 
           <TouchableOpacity
-            style={styles.transferBtn}
+            style={[
+              styles.transferBtn,
+              { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+            ]}
             onPress={() => setTransferModalVisible(true)}
           >
-            <CustomIcon name="Repeat" size={16} color="#FFFFFF" />
-            <Text style={styles.transferBtnText}>Transferir entre Cuentas</Text>
+            <CustomIcon name="Repeat" size={16} color={colors.primaryLight} />
+            <Text style={[styles.transferBtnText, { color: colors.primaryLight }]}>
+              Transferir entre Cuentas
+            </Text>
           </TouchableOpacity>
         </View>
 
         {/* Sección: Cuentas y Billeteras Líquidas */}
-        <Text style={styles.sectionHeading}>Cuentas & Billeteras ({liquidAccounts.length})</Text>
+        <Text style={[styles.sectionHeading, { color: colors.textPrimary }]}>
+          Cuentas & Billeteras ({liquidAccounts.length})
+        </Text>
 
         {liquidAccounts.length === 0 ? (
-          <View style={styles.emptyState}>
-            <CustomIcon name="Landmark" size={32} color="#64748B" />
-            <Text style={styles.emptyTitle}>Sin cuentas bancarias</Text>
-            <Text style={styles.emptyText}>Agrega cuentas de ahorros, corriente, efectivo o billeteras.</Text>
+          <View
+            style={[
+              styles.emptyState,
+              { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+            ]}
+          >
+            <CustomIcon name="Landmark" size={32} color={colors.textMuted} />
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+              Sin cuentas bancarias
+            </Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              Agrega cuentas de ahorros, corriente, efectivo o billeteras.
+            </Text>
           </View>
         ) : (
           liquidAccounts.map((acc) => (
@@ -107,12 +146,20 @@ export const AccountsScreen: React.FC = () => {
 
         {/* Sección: Deudas y Cuentas por Pagar (Fiados, Cafetería, etc.) */}
         <View style={styles.debtHeaderRow}>
-          <Text style={[styles.sectionHeading, { color: '#F87171', marginTop: 16 }]}>
+          <Text style={[styles.sectionHeading, { color: colors.dangerLight, marginTop: 16 }]}>
             Deudas & Cuentas por Pagar ({debtAccounts.length})
           </Text>
           {debtAccounts.length > 0 && (
-            <View style={styles.debtTotalBadge}>
-              <Text style={styles.debtTotalBadgeText}>
+            <View
+              style={[
+                styles.debtTotalBadge,
+                {
+                  backgroundColor: colors.dangerBg,
+                  borderColor: alpha(colors.danger, 0.3),
+                },
+              ]}
+            >
+              <Text style={[styles.debtTotalBadgeText, { color: colors.dangerLight }]}>
                 Total: -{formatCurrency(totalOtherDebts, currency)}
               </Text>
             </View>
@@ -120,10 +167,17 @@ export const AccountsScreen: React.FC = () => {
         </View>
 
         {debtAccounts.length === 0 ? (
-          <View style={[styles.emptyState, { backgroundColor: '#13111C' }]}>
-            <CustomIcon name="Receipt" size={32} color="#64748B" />
-            <Text style={styles.emptyTitle}>Sin deudas pendientes</Text>
-            <Text style={styles.emptyText}>
+          <View
+            style={[
+              styles.emptyState,
+              { backgroundColor: colors.debtSurface, borderColor: colors.border },
+            ]}
+          >
+            <CustomIcon name="Receipt" size={32} color={colors.textMuted} />
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>
+              Sin deudas pendientes
+            </Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
               ¿Consumes en la cafetería o tienes fiados? Crea una cuenta de deuda para registrar consumos y pagarla a fin de mes.
             </Text>
           </View>
@@ -137,8 +191,6 @@ export const AccountsScreen: React.FC = () => {
             />
           ))
         )}
-
-        <View style={{ height: 90 }} />
       </ScrollView>
 
       {/* Modales */}
@@ -172,7 +224,6 @@ export const AccountsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
   },
   container: {
     flex: 1,
@@ -189,13 +240,11 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   tag: {
-    color: '#818CF8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     letterSpacing: 1,
   },
   title: {
-    color: '#FFFFFF',
     fontSize: 21,
     fontWeight: 'bold',
     marginTop: 2,
@@ -203,24 +252,21 @@ const styles = StyleSheet.create({
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    minHeight: Layout.minTouchHeight,
     borderRadius: 10,
-    gap: 4,
+    gap: 5,
   },
   addBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   heroCard: {
-    backgroundColor: Theme.colors.surfaceElevated,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#334155',
   },
   heroRow: {
     flexDirection: 'row',
@@ -228,13 +274,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   heroLabel: {
-    color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: 'bold',
     letterSpacing: 0.5,
   },
   heroAmount: {
-    color: '#FFFFFF',
     fontSize: 24,
     fontWeight: 'bold',
     marginTop: 4,
@@ -243,20 +287,17 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   heroDebtLabel: {
-    color: '#F87171',
-    fontSize: 10.5,
+    fontSize: 13,
     fontWeight: 'bold',
     letterSpacing: 0.5,
   },
   heroDebtAmount: {
-    color: '#EF4444',
     fontSize: 16,
     fontWeight: 'bold',
     marginTop: 2,
   },
   heroSub: {
-    color: '#64748B',
-    fontSize: 11,
+    fontSize: 13,
     marginTop: 4,
     marginBottom: 14,
   },
@@ -264,21 +305,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1E293B',
+    minHeight: Layout.minTouchHeight,
     paddingVertical: 10,
     borderRadius: 10,
     gap: 6,
     borderWidth: 1,
-    borderColor: '#334155',
   },
   transferBtnText: {
-    color: '#818CF8',
     fontSize: 13,
     fontWeight: 'bold',
   },
   sectionHeading: {
-    color: '#FFFFFF',
-    fontSize: 14.5,
+    fontSize: 15,
     fontWeight: 'bold',
     marginBottom: 10,
     marginTop: 4,
@@ -290,38 +328,31 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   debtTotalBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
   debtTotalBadgeText: {
-    color: '#F87171',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   emptyState: {
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 14,
     padding: 20,
     alignItems: 'center',
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   emptyTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 'bold',
     marginTop: 8,
   },
   emptyText: {
-    color: '#94A3B8',
-    fontSize: 11.5,
+    fontSize: 13,
     textAlign: 'center',
     marginTop: 4,
-    lineHeight: 16,
+    lineHeight: 18,
   },
 });

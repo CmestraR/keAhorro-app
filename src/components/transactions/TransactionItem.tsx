@@ -1,11 +1,14 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Transaction } from '../../types/finance';
 import { useFinancial } from '../../context/FinancialContext';
 import { useAlert } from '../../context/AlertContext';
+import { useAppTheme } from '../../context/ThemeContext';
 import { formatCurrency, formatRelativeDate } from '../../utils/formatters';
-import { Theme } from '../common/Theme';
+import { alpha } from '../common/Theme';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 
 interface TransactionItemProps {
   transaction: Transaction;
@@ -17,6 +20,7 @@ interface TransactionItemProps {
 export const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, onPress, compact = false }) => {
   const { categories, accounts, creditCards, deleteTransaction, currency } = useFinancial();
   const { showConfirm, showSuccess } = useAlert();
+  const { colors } = useAppTheme();
 
   const category = categories.find((c) => c.id === transaction.categoryId);
   const account = accounts.find((a) => a.id === transaction.accountId);
@@ -40,17 +44,17 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, o
   const getAmountColor = () => {
     switch (transaction.type) {
       case 'income':
-        return '#10B981';
+        return colors.success;
       case 'expense':
-        return '#EF4444';
+        return colors.danger;
       case 'card_purchase':
-        return '#818CF8';
+        return colors.primaryLight;
       case 'transfer':
-        return '#06B6D4';
+        return colors.info;
       case 'card_payment':
-        return '#F59E0B';
+        return colors.warning;
       default:
-        return '#FFFFFF';
+        return colors.textPrimary;
     }
   };
 
@@ -84,10 +88,18 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, o
   };
 
   const hasGmf = !!transaction.gmfAmount && transaction.gmfAmount > 0;
+  const catColor = category?.color || colors.primary;
 
   return (
     <TouchableOpacity
-      style={[styles.container, compact && styles.containerCompact]}
+      style={[
+        styles.container,
+        compact && styles.containerCompact,
+        {
+          backgroundColor: colors.surfaceCard,
+          borderColor: colors.border,
+        },
+      ]}
       onPress={onPress}
       onLongPress={handleLongPress}
       activeOpacity={0.75}
@@ -96,13 +108,13 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, o
       <View
         style={[
           styles.iconContainer,
-          { backgroundColor: (category?.color || '#6366F1') + '20' },
+          { backgroundColor: alpha(catColor, 0.16) },
         ]}
       >
         <CustomIcon
           name={category?.icon || 'CircleHelp'}
           size={18}
-          color={category?.color || '#6366F1'}
+          color={catColor}
         />
       </View>
 
@@ -110,7 +122,7 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, o
       <View style={styles.contentContainer}>
         {/* Fila 1: Descripción Principal & Monto Principal (Predominantes) */}
         <View style={styles.row}>
-          <Text style={styles.description} numberOfLines={1}>
+          <Text style={[styles.description, { color: colors.textPrimary }]} numberOfLines={1}>
             {transaction.description}
           </Text>
           <Text style={[styles.amount, { color: getAmountColor() }]}>
@@ -122,25 +134,33 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, o
         {/* Fila 2 (Opcional): 4x1000 en su propia línea */}
         {hasGmf && !compact && (
           <View style={styles.gmfRow}>
-            <View style={styles.gmfPill}>
-              <Text style={styles.gmfPillText}>4x1000</Text>
+            <View
+              style={[
+                styles.gmfPill,
+                {
+                  backgroundColor: colors.dangerBg,
+                  borderColor: alpha(colors.danger, 0.3),
+                },
+              ]}
+            >
+              <Text style={[styles.gmfPillText, { color: colors.dangerLight }]}>4x1000</Text>
             </View>
-            <Text style={styles.gmfAmountText}>
+            <Text style={[styles.gmfAmountText, { color: colors.dangerLight }]}>
               -{formatCurrency(transaction.gmfAmount!, currency)}
             </Text>
           </View>
         )}
 
-        {/* Fila 3: Cuenta & Fecha en letra pequeña */}
+        {/* Fila 3: Cuenta & Fecha */}
         <View style={styles.row}>
           {!compact ? (
-            <Text style={styles.accountText} numberOfLines={1}>
+            <Text style={[styles.accountText, { color: colors.textSecondary }]} numberOfLines={1}>
               {getAccountLabel()}
             </Text>
           ) : (
             <View style={{ flex: 1 }} />
           )}
-          <Text style={styles.dateText}>
+          <Text style={[styles.dateText, { color: colors.textMuted }]}>
             {formatRelativeDate(transaction.date)}
           </Text>
         </View>
@@ -153,16 +173,14 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surfaceCard,
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 14,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   containerCompact: {
-    paddingVertical: 9,
+    paddingVertical: 10,
     marginBottom: 6,
   },
   iconContainer: {
@@ -184,14 +202,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   description: {
-    color: '#FFFFFF',
-    fontSize: 14.5,
+    fontSize: 15,
     fontWeight: '700',
     flex: 1,
     marginRight: 8,
   },
   amount: {
-    fontSize: 14.5,
+    fontSize: 15,
     fontWeight: '700',
   },
   gmfRow: {
@@ -201,32 +218,26 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   gmfPill: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
     paddingHorizontal: 6,
-    paddingVertical: 1,
+    paddingVertical: 2,
     borderRadius: 4,
     borderWidth: 0.5,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
   gmfPillText: {
-    color: '#F87171',
-    fontSize: 10.5,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   gmfAmountText: {
-    color: '#F87171',
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '600',
   },
   accountText: {
-    color: '#94A3B8',
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '500',
     flex: 1,
     marginRight: 8,
   },
   dateText: {
-    color: '#64748B',
-    fontSize: 11.5,
+    fontSize: 13,
   },
 });

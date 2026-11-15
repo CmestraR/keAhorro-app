@@ -1,21 +1,20 @@
 import React, { useState, useMemo } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Dimensions,
 } from 'react-native';
 import { useFinancial } from '../context/FinancialContext';
+import { useAppTheme } from '../context/ThemeContext';
 import { TransactionItem } from '../components/transactions/TransactionItem';
 import { AddTransactionModal } from '../components/transactions/AddTransactionModal';
 import { formatCurrency, getMonthName } from '../utils/formatters';
-import { Theme } from '../components/common/Theme';
+import { Layout, alpha } from '../components/common/Theme';
 import { CustomIcon } from '../components/common/CustomIcon';
-
-const { width } = Dimensions.get('window');
+import { Text, TextInput } from '../components/common/AppText';
+import { TouchableOpacity } from '../components/common/Touchable';
+import { AnimatedBar } from '../components/common/AnimatedBar';
+import { FadeSlideIn } from '../components/common/FadeSlideIn';
 
 interface TransactionsScreenProps {
   filterAccountId?: string | null;
@@ -27,6 +26,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
   onClearAccountFilter,
 }) => {
   const { transactions, categories, accounts, currency } = useFinancial();
+  const { colors } = useAppTheme();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(filterAccountId || null);
@@ -132,7 +132,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
           catId,
           name: cat?.name || 'Varios',
           icon: cat?.icon || 'ShoppingBag',
-          color: cat?.color || '#EF4444',
+          color: cat?.color || colors.danger,
           amount,
           percentage,
         };
@@ -148,7 +148,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
           catId,
           name: cat?.name || 'Ingreso',
           icon: cat?.icon || 'TrendingUp',
-          color: cat?.color || '#10B981',
+          color: cat?.color || colors.success,
           amount,
           percentage,
         };
@@ -156,7 +156,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
       .sort((a, b) => b.amount - a.amount);
 
     return { expenseList, incomeList };
-  }, [filteredTransactions, categories, monthTotals]);
+  }, [filteredTransactions, categories, monthTotals, colors.danger, colors.success]);
 
   const typeFilterChips = [
     { id: 'all', label: 'Todos' },
@@ -166,94 +166,144 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
     { id: 'transfer', label: 'Transferencias' },
   ];
 
+  const incomePercent =
+    monthTotals.income > 0
+      ? (monthTotals.income / (monthTotals.income + monthTotals.expense || 1)) * 100
+      : 0;
+  const expensePercent =
+    monthTotals.expense > 0
+      ? (monthTotals.expense / (monthTotals.income + monthTotals.expense || 1)) * 100
+      : 0;
+
   return (
-    <View style={styles.safeArea}>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.tag}>HISTORIAL</Text>
-            <Text style={styles.title}>Movimientos</Text>
+            <Text style={[styles.tag, { color: colors.primaryLight }]}>HISTORIAL</Text>
+            <Text style={[styles.title, { color: colors.textPrimary }]}>Movimientos</Text>
           </View>
 
           {/* Toggle Vista Lista / Vista Gráfica */}
-          <View style={styles.viewToggle}>
+          <View
+            style={[
+              styles.viewToggle,
+              { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+            ]}
+          >
             <TouchableOpacity
-              style={[styles.toggleBtn, viewMode === 'list' && styles.toggleBtnActive]}
+              style={[
+                styles.toggleBtn,
+                viewMode === 'list' && { backgroundColor: colors.primary },
+              ]}
               onPress={() => setViewMode('list')}
             >
-              <CustomIcon name="List" size={16} color={viewMode === 'list' ? '#FFFFFF' : '#94A3B8'} />
+              <CustomIcon
+                name="List"
+                size={16}
+                color={viewMode === 'list' ? '#FFFFFF' : colors.textMuted}
+              />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.toggleBtn, viewMode === 'chart' && styles.toggleBtnActive]}
+              style={[
+                styles.toggleBtn,
+                viewMode === 'chart' && { backgroundColor: colors.primary },
+              ]}
               onPress={() => setViewMode('chart')}
             >
-              <CustomIcon name="BarChart3" size={16} color={viewMode === 'chart' ? '#FFFFFF' : '#94A3B8'} />
+              <CustomIcon
+                name="BarChart3"
+                size={16}
+                color={viewMode === 'chart' ? '#FFFFFF' : colors.textMuted}
+              />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Selector de Mes */}
-        <View style={styles.monthSelector}>
+        <View
+          style={[
+            styles.monthSelector,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
           <TouchableOpacity onPress={handlePrevMonth} style={styles.monthArrow}>
-            <CustomIcon name="ChevronLeft" size={20} color="#CBD5E1" />
+            <CustomIcon name="ChevronLeft" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
           <View style={styles.monthTitleBox}>
-            <CustomIcon name="Calendar" size={15} color="#818CF8" />
-            <Text style={styles.monthTitleText}>
+            <CustomIcon name="Calendar" size={15} color={colors.primaryLight} />
+            <Text style={[styles.monthTitleText, { color: colors.textPrimary }]}>
               {getMonthName(selectedDate.getMonth())} {selectedDate.getFullYear()}
             </Text>
           </View>
           <TouchableOpacity onPress={handleNextMonth} style={styles.monthArrow}>
-            <CustomIcon name="ChevronRight" size={20} color="#CBD5E1" />
+            <CustomIcon name="ChevronRight" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
         {/* Resumen del Mes Filtrado */}
-        <View style={styles.summaryBar}>
+        <View
+          style={[
+            styles.summaryBar,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+          ]}
+        >
           <View style={styles.summaryCol}>
-            <Text style={styles.summaryLabel}>Ingresos</Text>
-            <Text style={[styles.summaryVal, { color: '#10B981' }]}>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Ingresos</Text>
+            <Text style={[styles.summaryVal, { color: colors.success }]}>
               +{formatCurrency(monthTotals.income, currency)}
             </Text>
           </View>
           <View style={styles.summaryCol}>
-            <Text style={styles.summaryLabel}>Gastos</Text>
-            <Text style={[styles.summaryVal, { color: '#EF4444' }]}>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Gastos</Text>
+            <Text style={[styles.summaryVal, { color: colors.danger }]}>
               -{formatCurrency(monthTotals.expense, currency)}
             </Text>
           </View>
           <View style={styles.summaryCol}>
-            <Text style={styles.summaryLabel}>Balance</Text>
-            <Text style={[styles.summaryVal, { color: monthTotals.balance >= 0 ? '#34D399' : '#F87171' }]}>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Balance</Text>
+            <Text
+              style={[
+                styles.summaryVal,
+                { color: monthTotals.balance >= 0 ? colors.successLight : colors.dangerLight },
+              ]}
+            >
               {formatCurrency(monthTotals.balance, currency)}
             </Text>
           </View>
         </View>
 
-        {/* Barra de Búsqueda y Filtros de Tipo */}
+        {/* Barra de Búsqueda */}
         <View style={styles.searchRow}>
-          <View style={styles.searchInputBox}>
-            <CustomIcon name="Search" size={16} color="#64748B" />
+          <View
+            style={[
+              styles.searchInputBox,
+              { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+            ]}
+          >
+            <CustomIcon name="Search" size={16} color={colors.textMuted} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.textPrimary }]}
               placeholder="Buscar movimiento..."
-              placeholderTextColor="#64748B"
+              placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <CustomIcon name="X" size={14} color="#94A3B8" />
+                <CustomIcon name="X" size={16} color={colors.textMuted} />
               </TouchableOpacity>
             )}
           </View>
         </View>
 
-        {/* Chips de Categorías / Filtros */}
+        {/* Chips de Categorías / Filtros (scroll suave + indicador + altura >= 40px) */}
         <ScrollView
           horizontal
-          showsHorizontalScrollIndicator={false}
+          showsHorizontalScrollIndicator={true}
+          persistentScrollbar={true}
+          decelerationRate="fast"
           style={styles.filterChipsRow}
           contentContainerStyle={styles.filterChipsContent}
         >
@@ -262,10 +312,26 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
             return (
               <TouchableOpacity
                 key={chip.id}
-                style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: colors.surfaceCard,
+                    borderColor: colors.border,
+                  },
+                  isSelected && {
+                    backgroundColor: colors.primary,
+                    borderColor: colors.primaryLight,
+                  },
+                ]}
                 onPress={() => setSelectedType(chip.id)}
               >
-                <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    { color: colors.textSecondary },
+                    isSelected && styles.filterChipTextSelected,
+                  ]}
+                >
                   {chip.label}
                 </Text>
               </TouchableOpacity>
@@ -273,22 +339,44 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
           })}
         </ScrollView>
 
-        {/* Chips de Cuentas */}
+        {/* Chips de Cuentas (scroll suave + indicador + altura >= 40px) */}
         <ScrollView
           horizontal
-          showsHorizontalScrollIndicator={false}
+          showsHorizontalScrollIndicator={true}
+          persistentScrollbar={true}
+          decelerationRate="fast"
           style={styles.accountChipsRow}
           contentContainerStyle={styles.accountChipsContent}
         >
           <TouchableOpacity
-            style={[styles.accountChip, !selectedAccountId && styles.accountChipSelected]}
+            style={[
+              styles.accountChip,
+              {
+                backgroundColor: colors.surfaceCard,
+                borderColor: colors.border,
+              },
+              !selectedAccountId && {
+                backgroundColor: colors.primary,
+                borderColor: colors.primaryLight,
+              },
+            ]}
             onPress={() => {
               setSelectedAccountId(null);
               onClearAccountFilter?.();
             }}
           >
-            <CustomIcon name="Layers" size={13} color={!selectedAccountId ? '#FFFFFF' : '#94A3B8'} />
-            <Text style={[styles.accountChipText, !selectedAccountId && styles.accountChipTextSelected]}>
+            <CustomIcon
+              name="Layers"
+              size={14}
+              color={!selectedAccountId ? '#FFFFFF' : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.accountChipText,
+                { color: colors.textSecondary },
+                !selectedAccountId && styles.accountChipTextSelected,
+              ]}
+            >
               Todas las Cuentas
             </Text>
           </TouchableOpacity>
@@ -299,6 +387,10 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                 key={acc.id}
                 style={[
                   styles.accountChip,
+                  {
+                    backgroundColor: colors.surfaceCard,
+                    borderColor: colors.border,
+                  },
                   isSelected && { backgroundColor: acc.color, borderColor: acc.color },
                 ]}
                 onPress={() => {
@@ -310,8 +402,18 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                   }
                 }}
               >
-                <CustomIcon name={acc.icon || 'Landmark'} size={13} color={isSelected ? '#FFFFFF' : acc.color} />
-                <Text style={[styles.accountChipText, isSelected && styles.accountChipTextSelected]}>
+                <CustomIcon
+                  name={acc.icon || 'Landmark'}
+                  size={14}
+                  color={isSelected ? '#FFFFFF' : acc.color}
+                />
+                <Text
+                  style={[
+                    styles.accountChipText,
+                    { color: colors.textSecondary },
+                    isSelected && styles.accountChipTextSelected,
+                  ]}
+                >
                   {acc.name}
                 </Text>
               </TouchableOpacity>
@@ -321,11 +423,22 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
 
         {/* Banner de Filtro Activo por Cuenta */}
         {activeAccount && (
-          <View style={styles.activeFilterBanner}>
+          <View
+            style={[
+              styles.activeFilterBanner,
+              {
+                backgroundColor: alpha(colors.primary, 0.14),
+                borderColor: alpha(colors.primary, 0.3),
+              },
+            ]}
+          >
             <View style={styles.activeFilterLeft}>
               <CustomIcon name={activeAccount.icon || 'Landmark'} size={14} color={activeAccount.color} />
-              <Text style={styles.activeFilterText}>
-                Filtrando por: <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>{activeAccount.name}</Text>
+              <Text style={[styles.activeFilterText, { color: colors.textSecondary }]}>
+                Filtrando por:{' '}
+                <Text style={{ color: colors.textPrimary, fontWeight: 'bold' }}>
+                  {activeAccount.name}
+                </Text>
               </Text>
             </View>
             <TouchableOpacity
@@ -333,142 +446,182 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
                 setSelectedAccountId(null);
                 onClearAccountFilter?.();
               }}
-              style={styles.clearFilterBadge}
+              style={[styles.clearFilterBadge, { backgroundColor: colors.surfaceElevated }]}
             >
-              <CustomIcon name="X" size={12} color="#CBD5E1" />
-              <Text style={styles.clearFilterText}>Quitar</Text>
+              <CustomIcon name="X" size={12} color={colors.textSecondary} />
+              <Text style={[styles.clearFilterText, { color: colors.textPrimary }]}>Quitar</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Vista Lista o Vista Gráfica */}
-        {viewMode === 'list' ? (
-          <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-            {filteredTransactions.length === 0 ? (
-              <View style={styles.emptyState}>
-                <CustomIcon name="Receipt" size={36} color="#64748B" />
-                <Text style={styles.emptyTitle}>Sin movimientos</Text>
-                <Text style={styles.emptySub}>
-                  No hay transacciones que coincidan con los filtros para este mes.
+        {/* Vista Lista o Vista Gráfica con transición suave (fade + slide-up 200ms) */}
+        <FadeSlideIn key={viewMode} style={styles.list}>
+          {viewMode === 'list' ? (
+            <ScrollView
+              style={styles.list}
+              contentContainerStyle={{ paddingBottom: Layout.bottomNavSpace }}
+              showsVerticalScrollIndicator={false}
+            >
+              {filteredTransactions.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <CustomIcon name="Receipt" size={36} color={colors.textMuted} />
+                  <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
+                    Sin movimientos
+                  </Text>
+                  <Text style={[styles.emptySub, { color: colors.textMuted }]}>
+                    No hay transacciones que coincidan con los filtros para este mes.
+                  </Text>
+                </View>
+              ) : (
+                filteredTransactions.map((tx) => (
+                  <TransactionItem key={tx.id} transaction={tx} />
+                ))
+              )}
+            </ScrollView>
+          ) : (
+            /* Vista Gráfica */
+            <ScrollView
+              style={styles.list}
+              contentContainerStyle={{ paddingBottom: Layout.bottomNavSpace }}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Gráfica de Comparación Visual Ingresos vs Gastos */}
+              <View
+                style={[
+                  styles.chartCard,
+                  { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.chartTitle, { color: colors.textPrimary }]}>
+                  Comparación del Mes
                 </Text>
-              </View>
-            ) : (
-              filteredTransactions.map((tx) => (
-                <TransactionItem key={tx.id} transaction={tx} />
-              ))
-            )}
-            <View style={{ height: 90 }} />
-          </ScrollView>
-        ) : (
-          /* Vista Gráfica */
-          <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-            {/* Gráfica de Comparación Visual Ingresos vs Gastos */}
-            <View style={styles.chartCard}>
-              <Text style={styles.chartTitle}>Comparación del Mes</Text>
-              <View style={styles.comparisonBarContainer}>
-                <View style={styles.comparisonBarRow}>
-                  <Text style={styles.compBarLabel}>Ingresos</Text>
-                  <View style={styles.compBarBg}>
-                    <View
-                      style={[
-                        styles.compBarFill,
-                        {
-                          backgroundColor: '#10B981',
-                          width: `${Math.min(100, monthTotals.income > 0 ? (monthTotals.income / (monthTotals.income + monthTotals.expense || 1)) * 100 : 0)}%`,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text style={[styles.compBarVal, { color: '#10B981' }]}>
-                    {formatCurrency(monthTotals.income, currency)}
-                  </Text>
-                </View>
-
-                <View style={styles.comparisonBarRow}>
-                  <Text style={styles.compBarLabel}>Gastos</Text>
-                  <View style={styles.compBarBg}>
-                    <View
-                      style={[
-                        styles.compBarFill,
-                        {
-                          backgroundColor: '#EF4444',
-                          width: `${Math.min(100, monthTotals.expense > 0 ? (monthTotals.expense / (monthTotals.income + monthTotals.expense || 1)) * 100 : 0)}%`,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text style={[styles.compBarVal, { color: '#EF4444' }]}>
-                    {formatCurrency(monthTotals.expense, currency)}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Desglose Gráfico de Gastos por Categoría */}
-            <View style={styles.chartCard}>
-              <Text style={styles.chartTitle}>Gastos por Categoría</Text>
-              {categoryStats.expenseList.length === 0 ? (
-                <Text style={styles.emptyChartText}>No hay gastos registrados este mes.</Text>
-              ) : (
-                categoryStats.expenseList.map((cat) => (
-                  <View key={cat.catId} style={styles.catStatRow}>
-                    <View style={styles.catStatHeader}>
-                      <View style={styles.catStatLeft}>
-                        <View style={[styles.catStatDot, { backgroundColor: cat.color }]} />
-                        <Text style={styles.catStatName}>{cat.name}</Text>
-                      </View>
-                      <View style={styles.catStatRight}>
-                        <Text style={styles.catStatAmount}>{formatCurrency(cat.amount, currency)}</Text>
-                        <Text style={styles.catStatPercent}>{cat.percentage.toFixed(1)}%</Text>
-                      </View>
-                    </View>
-                    <View style={styles.catProgressBarBg}>
-                      <View
-                        style={[
-                          styles.catProgressBarFill,
-                          { width: `${cat.percentage}%`, backgroundColor: cat.color },
-                        ]}
+                <View style={styles.comparisonBarContainer}>
+                  <View style={styles.comparisonBarRow}>
+                    <Text style={[styles.compBarLabel, { color: colors.textSecondary }]}>
+                      Ingresos
+                    </Text>
+                    <View style={[styles.compBarBg, { backgroundColor: colors.inset }]}>
+                      <AnimatedBar
+                        percent={incomePercent}
+                        color={colors.success}
+                        style={styles.compBarFill}
                       />
                     </View>
+                    <Text style={[styles.compBarVal, { color: colors.success }]}>
+                      {formatCurrency(monthTotals.income, currency)}
+                    </Text>
                   </View>
-                ))
-              )}
-            </View>
 
-            {/* Desglose Gráfico de Ingresos por Categoría */}
-            <View style={styles.chartCard}>
-              <Text style={styles.chartTitle}>Ingresos por Categoría</Text>
-              {categoryStats.incomeList.length === 0 ? (
-                <Text style={styles.emptyChartText}>No hay ingresos registrados este mes.</Text>
-              ) : (
-                categoryStats.incomeList.map((cat) => (
-                  <View key={cat.catId} style={styles.catStatRow}>
-                    <View style={styles.catStatHeader}>
-                      <View style={styles.catStatLeft}>
-                        <View style={[styles.catStatDot, { backgroundColor: cat.color }]} />
-                        <Text style={styles.catStatName}>{cat.name}</Text>
-                      </View>
-                      <View style={styles.catStatRight}>
-                        <Text style={styles.catStatAmount}>{formatCurrency(cat.amount, currency)}</Text>
-                        <Text style={styles.catStatPercent}>{cat.percentage.toFixed(1)}%</Text>
-                      </View>
-                    </View>
-                    <View style={styles.catProgressBarBg}>
-                      <View
-                        style={[
-                          styles.catProgressBarFill,
-                          { width: `${cat.percentage}%`, backgroundColor: cat.color },
-                        ]}
+                  <View style={styles.comparisonBarRow}>
+                    <Text style={[styles.compBarLabel, { color: colors.textSecondary }]}>
+                      Gastos
+                    </Text>
+                    <View style={[styles.compBarBg, { backgroundColor: colors.inset }]}>
+                      <AnimatedBar
+                        percent={expensePercent}
+                        color={colors.danger}
+                        style={styles.compBarFill}
                       />
                     </View>
+                    <Text style={[styles.compBarVal, { color: colors.danger }]}>
+                      {formatCurrency(monthTotals.expense, currency)}
+                    </Text>
                   </View>
-                ))
-              )}
-            </View>
+                </View>
+              </View>
 
-            <View style={{ height: 90 }} />
-          </ScrollView>
-        )}
+              {/* Desglose Gráfico de Gastos por Categoría */}
+              <View
+                style={[
+                  styles.chartCard,
+                  { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.chartTitle, { color: colors.textPrimary }]}>
+                  Gastos por Categoría
+                </Text>
+                {categoryStats.expenseList.length === 0 ? (
+                  <Text style={[styles.emptyChartText, { color: colors.textMuted }]}>
+                    No hay gastos registrados este mes.
+                  </Text>
+                ) : (
+                  categoryStats.expenseList.map((cat) => (
+                    <View key={cat.catId} style={styles.catStatRow}>
+                      <View style={styles.catStatHeader}>
+                        <View style={styles.catStatLeft}>
+                          <View style={[styles.catStatDot, { backgroundColor: cat.color }]} />
+                          <Text style={[styles.catStatName, { color: colors.textPrimary }]}>
+                            {cat.name}
+                          </Text>
+                        </View>
+                        <View style={styles.catStatRight}>
+                          <Text style={[styles.catStatAmount, { color: colors.textPrimary }]}>
+                            {formatCurrency(cat.amount, currency)}
+                          </Text>
+                          <Text style={[styles.catStatPercent, { color: colors.textMuted }]}>
+                            {cat.percentage.toFixed(1)}%
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={[styles.catProgressBarBg, { backgroundColor: colors.inset }]}>
+                        <AnimatedBar
+                          percent={cat.percentage}
+                          color={cat.color}
+                          style={styles.catProgressBarFill}
+                        />
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+
+              {/* Desglose Gráfico de Ingresos por Categoría */}
+              <View
+                style={[
+                  styles.chartCard,
+                  { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.chartTitle, { color: colors.textPrimary }]}>
+                  Ingresos por Categoría
+                </Text>
+                {categoryStats.incomeList.length === 0 ? (
+                  <Text style={[styles.emptyChartText, { color: colors.textMuted }]}>
+                    No hay ingresos registrados este mes.
+                  </Text>
+                ) : (
+                  categoryStats.incomeList.map((cat) => (
+                    <View key={cat.catId} style={styles.catStatRow}>
+                      <View style={styles.catStatHeader}>
+                        <View style={styles.catStatLeft}>
+                          <View style={[styles.catStatDot, { backgroundColor: cat.color }]} />
+                          <Text style={[styles.catStatName, { color: colors.textPrimary }]}>
+                            {cat.name}
+                          </Text>
+                        </View>
+                        <View style={styles.catStatRight}>
+                          <Text style={[styles.catStatAmount, { color: colors.textPrimary }]}>
+                            {formatCurrency(cat.amount, currency)}
+                          </Text>
+                          <Text style={[styles.catStatPercent, { color: colors.textMuted }]}>
+                            {cat.percentage.toFixed(1)}%
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={[styles.catProgressBarBg, { backgroundColor: colors.inset }]}>
+                        <AnimatedBar
+                          percent={cat.percentage}
+                          color={cat.color}
+                          style={styles.catProgressBarFill}
+                        />
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            </ScrollView>
+          )}
+        </FadeSlideIn>
       </View>
 
       <AddTransactionModal
@@ -482,7 +635,6 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
   },
   container: {
     flex: 1,
@@ -495,45 +647,45 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   tag: {
-    color: '#818CF8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
     letterSpacing: 1,
   },
   title: {
-    color: '#FFFFFF',
     fontSize: 22,
     fontWeight: 'bold',
   },
   viewToggle: {
     flexDirection: 'row',
-    backgroundColor: '#1E293B',
     borderRadius: 12,
     padding: 3,
     gap: 2,
     borderWidth: 1,
-    borderColor: '#334155',
   },
   toggleBtn: {
+    minHeight: 34,
     paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderRadius: 8,
-  },
-  toggleBtnActive: {
-    backgroundColor: '#6366F1',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   monthSelector: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 8,
     marginBottom: 12,
+    borderWidth: 1,
   },
   monthArrow: {
     padding: 6,
+    minHeight: 36,
+    minWidth: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   monthTitleBox: {
     flexDirection: 'row',
@@ -541,31 +693,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   monthTitleText: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 'bold',
     textTransform: 'capitalize',
   },
   summaryBar: {
     flexDirection: 'row',
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 14,
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
   },
   summaryCol: {
     flex: 1,
     alignItems: 'center',
   },
   summaryLabel: {
-    color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '500',
   },
   summaryVal: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
     marginTop: 2,
   },
@@ -575,46 +723,38 @@ const styles = StyleSheet.create({
   searchInputBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 12,
     paddingHorizontal: 12,
-    height: 40,
+    height: 42,
     gap: 8,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   searchInput: {
     flex: 1,
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
   },
   filterChipsRow: {
     flexGrow: 0,
-    height: 36,
+    minHeight: 46,
     marginBottom: 8,
   },
   filterChipsContent: {
     alignItems: 'center',
+    paddingVertical: 2,
+    paddingRight: 8,
   },
   filterChip: {
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginRight: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginRight: 8,
     borderWidth: 1,
-    borderColor: '#334155',
-    height: 30,
+    minHeight: Layout.minTouchHeight,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  filterChipSelected: {
-    backgroundColor: '#6366F1',
-    borderColor: '#818CF8',
-  },
   filterChipText: {
-    color: '#94A3B8',
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '600',
   },
   filterChipTextSelected: {
@@ -623,33 +763,28 @@ const styles = StyleSheet.create({
   },
   accountChipsRow: {
     flexGrow: 0,
-    height: 36,
+    minHeight: 46,
     marginBottom: 8,
   },
   accountChipsContent: {
     alignItems: 'center',
+    paddingVertical: 2,
+    paddingRight: 8,
   },
   accountChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#1E293B',
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    borderRadius: 8,
-    marginRight: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginRight: 8,
     borderWidth: 1,
-    borderColor: '#334155',
-    height: 30,
+    minHeight: Layout.minTouchHeight,
     justifyContent: 'center',
   },
-  accountChipSelected: {
-    backgroundColor: '#6366F1',
-    borderColor: '#818CF8',
-  },
   accountChipText: {
-    color: '#94A3B8',
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '600',
   },
   accountChipTextSelected: {
@@ -660,13 +795,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 8,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.3)',
   },
   activeFilterLeft: {
     flexDirection: 'row',
@@ -674,21 +807,18 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   activeFilterText: {
-    color: '#CBD5E1',
-    fontSize: 12,
+    fontSize: 13,
   },
   clearFilterBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#334155',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   clearFilterText: {
-    color: '#FFFFFF',
-    fontSize: 10.5,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   list: {
@@ -701,33 +831,27 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptyTitle: {
-    color: '#94A3B8',
     fontSize: 15,
     fontWeight: 'bold',
   },
   emptySub: {
-    color: '#64748B',
-    fontSize: 12,
+    fontSize: 13,
     textAlign: 'center',
     paddingHorizontal: 30,
   },
   chartCard: {
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 16,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   chartTitle: {
-    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: 'bold',
     marginBottom: 12,
   },
   emptyChartText: {
-    color: '#64748B',
-    fontSize: 12,
+    fontSize: 13,
     textAlign: 'center',
     paddingVertical: 10,
   },
@@ -738,13 +862,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   compBarLabel: {
-    color: '#CBD5E1',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '500',
   },
   compBarBg: {
     height: 12,
-    backgroundColor: '#0F172A',
     borderRadius: 6,
     overflow: 'hidden',
   },
@@ -778,7 +900,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   catStatName: {
-    color: '#E2E8F0',
     fontSize: 13,
     fontWeight: '500',
   },
@@ -788,22 +909,19 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   catStatAmount: {
-    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '600',
   },
   catStatPercent: {
-    color: '#94A3B8',
-    fontSize: 11,
+    fontSize: 13,
   },
   catProgressBarBg: {
-    height: 6,
-    backgroundColor: '#0F172A',
-    borderRadius: 3,
+    height: 7,
+    borderRadius: 4,
     overflow: 'hidden',
   },
   catProgressBarFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 4,
   },
 });

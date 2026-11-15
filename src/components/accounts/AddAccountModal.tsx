@@ -2,11 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  TextInput,
   Switch,
   Platform,
 } from 'react-native';
@@ -15,6 +12,8 @@ import { useFinancial } from '../../context/FinancialContext';
 import { useAlert } from '../../context/AlertContext';
 import { Theme } from '../common/Theme';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text, TextInput } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 import { ColorPickerModal } from '../common/ColorPickerModal';
 import { formatInputNumber, parseInputNumber } from '../../utils/formatters';
 

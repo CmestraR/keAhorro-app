@@ -1,12 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   Modal,
   ScrollView,
-  TouchableOpacity,
-  TextInput,
   Alert,
   Dimensions,
   Platform,
@@ -16,6 +13,8 @@ import { useFinancial } from '../../context/FinancialContext';
 import { useAlert } from '../../context/AlertContext';
 import { formatCurrency } from '../../utils/formatters';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text, TextInput } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 
 interface CardStatementModalProps {
   visible: boolean;

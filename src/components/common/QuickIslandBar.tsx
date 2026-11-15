@@ -1,19 +1,17 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   Modal,
-  TextInput,
-  Alert,
 } from 'react-native';
 import { parseBankNotification, ParsedBankMessage } from '../../utils/bankNotificationParser';
 import { useFinancial } from '../../context/FinancialContext';
 import { useAlert } from '../../context/AlertContext';
+import { useAppTheme } from '../../context/ThemeContext';
 import { formatCurrency } from '../../utils/formatters';
-import { Theme } from './Theme';
 import { CustomIcon } from './CustomIcon';
+import { Text, TextInput } from './AppText';
+import { TouchableOpacity } from './Touchable';
 
 interface QuickIslandBarProps {
   onOpenAddModal: (prefill?: Partial<ParsedBankMessage>) => void;
@@ -24,6 +22,7 @@ interface QuickIslandBarProps {
 export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, variant = 'pill' }) => {
   const { currency } = useFinancial();
   const { showWarning } = useAlert();
+  const { colors } = useAppTheme();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [notificationText, setNotificationText] = useState('');
   const [parsedPreview, setParsedPreview] = useState<ParsedBankMessage | null>(null);
@@ -60,13 +59,21 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
       {variant === 'icon' ? (
         /* Acceso sutil de ícono con badge (header) */
         <TouchableOpacity
-          style={styles.iconTrigger}
+          style={[
+            styles.iconTrigger,
+            { backgroundColor: colors.surfaceElevated, borderColor: colors.borderLight },
+          ]}
           activeOpacity={0.8}
           onPress={() => setIsModalOpen(true)}
           accessibilityLabel="Notificaciones activas - captura rápida"
         >
-          <CustomIcon name="Sparkles" size={20} color="#818CF8" />
-          <View style={styles.iconBadge} />
+          <CustomIcon name="Sparkles" size={20} color={colors.primaryLight} />
+          <View
+            style={[
+              styles.iconBadge,
+              { backgroundColor: colors.success, borderColor: colors.surfaceElevated },
+            ]}
+          />
         </TouchableOpacity>
       ) : (
         /* Píldora de Acceso Rápido / Isla Dinámica */
@@ -96,33 +103,48 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
           <TouchableOpacity
             activeOpacity={1}
             onPress={(e) => e.stopPropagation()}
-            style={styles.modalContent}
+            style={[
+              styles.modalContent,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
           >
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.headerTitleRow}>
-                <View style={styles.sparkleBox}>
-                  <CustomIcon name="Zap" size={16} color="#F59E0B" />
+                <View style={[styles.sparkleBox, { backgroundColor: colors.warningBg }]}>
+                  <CustomIcon name="Zap" size={16} color={colors.warning} />
                 </View>
                 <View>
-                  <Text style={styles.tag}>DETECCIÓN INTELIGENTE</Text>
-                  <Text style={styles.title}>Leer Notificación Bancaria</Text>
+                  <Text style={[styles.tag, { color: colors.warning }]}>DETECCIÓN INTELIGENTE</Text>
+                  <Text style={[styles.title, { color: colors.textPrimary }]}>
+                    Leer Notificación Bancaria
+                  </Text>
                 </View>
               </View>
-              <TouchableOpacity onPress={() => setIsModalOpen(false)} style={styles.closeBtn}>
-                <CustomIcon name="X" size={18} color="#94A3B8" />
+              <TouchableOpacity
+                onPress={() => setIsModalOpen(false)}
+                style={[styles.closeBtn, { backgroundColor: colors.surfaceElevated }]}
+              >
+                <CustomIcon name="X" size={18} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.instruction}>
+            <Text style={[styles.instruction, { color: colors.textSecondary }]}>
               Pega aquí el texto de una notificación o SMS de Bancolombia, Nu, Nequi, Daviplata o cualquier banco:
             </Text>
 
             {/* Input para pegar texto */}
             <TextInput
-              style={styles.textArea}
+              style={[
+                styles.textArea,
+                {
+                  backgroundColor: colors.surfaceElevated,
+                  color: colors.textPrimary,
+                  borderColor: colors.borderLight,
+                },
+              ]}
               placeholder="Pega aquí: ej. 'Bancolombia le informa compra por $85.000 en...' o 'Transferencia a Nu...'"
-              placeholderTextColor="#64748B"
+              placeholderTextColor={colors.textMuted}
               multiline
               numberOfLines={4}
               value={notificationText}
@@ -130,15 +152,20 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
             />
 
             {/* Ejemplos rápidos */}
-            <Text style={styles.sampleLabel}>O prueba con un ejemplo:</Text>
+            <Text style={[styles.sampleLabel, { color: colors.textMuted }]}>
+              O prueba con un ejemplo:
+            </Text>
             <View style={styles.samplesRow}>
               {sampleNotifications.map((sample, idx) => (
                 <TouchableOpacity
                   key={idx}
-                  style={styles.sampleChip}
+                  style={[
+                    styles.sampleChip,
+                    { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                  ]}
                   onPress={() => handleTextChange(sample)}
                 >
-                  <Text style={styles.sampleChipText} numberOfLines={1}>
+                  <Text style={[styles.sampleChipText, { color: colors.primaryLight }]} numberOfLines={1}>
                     {sample.substring(0, 24)}...
                   </Text>
                 </TouchableOpacity>
@@ -147,37 +174,59 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
 
             {/* Vista Previa de Detección */}
             {parsedPreview ? (
-              <View style={styles.previewCard}>
+              <View
+                style={[
+                  styles.previewCard,
+                  { backgroundColor: colors.inset, borderColor: colors.success },
+                ]}
+              >
                 <View style={styles.previewHeader}>
-                  <CustomIcon name="CheckCircle" size={14} color="#10B981" />
-                  <Text style={styles.previewTitle}>Datos Detectados con Éxito</Text>
+                  <CustomIcon name="CheckCircle" size={14} color={colors.success} />
+                  <Text style={[styles.previewTitle, { color: colors.success }]}>
+                    Datos Detectados con Éxito
+                  </Text>
                 </View>
                 <View style={styles.previewRow}>
-                  <Text style={styles.previewLabel}>Banco / Origen:</Text>
-                  <Text style={styles.previewVal}>{parsedPreview.bankName}</Text>
+                  <Text style={[styles.previewLabel, { color: colors.textMuted }]}>
+                    Banco / Origen:
+                  </Text>
+                  <Text style={[styles.previewVal, { color: colors.textPrimary }]}>
+                    {parsedPreview.bankName}
+                  </Text>
                 </View>
                 <View style={styles.previewRow}>
-                  <Text style={styles.previewLabel}>Monto Extraído:</Text>
-                  <Text style={[styles.previewVal, { color: '#34D399', fontWeight: 'bold' }]}>
+                  <Text style={[styles.previewLabel, { color: colors.textMuted }]}>
+                    Monto Extraído:
+                  </Text>
+                  <Text style={[styles.previewVal, { color: colors.successLight, fontWeight: 'bold' }]}>
                     {formatCurrency(parsedPreview.amount, currency)}
                   </Text>
                 </View>
                 <View style={styles.previewRow}>
-                  <Text style={styles.previewLabel}>Concepto:</Text>
-                  <Text style={styles.previewVal}>{parsedPreview.description}</Text>
+                  <Text style={[styles.previewLabel, { color: colors.textMuted }]}>Concepto:</Text>
+                  <Text style={[styles.previewVal, { color: colors.textPrimary }]}>
+                    {parsedPreview.description}
+                  </Text>
                 </View>
                 <View style={styles.previewRow}>
-                  <Text style={styles.previewLabel}>Tipo de Movimiento:</Text>
-                  <Text style={[styles.previewVal, { textTransform: 'capitalize' }]}>
+                  <Text style={[styles.previewLabel, { color: colors.textMuted }]}>
+                    Tipo de Movimiento:
+                  </Text>
+                  <Text
+                    style={[
+                      styles.previewVal,
+                      { color: colors.textPrimary, textTransform: 'capitalize' },
+                    ]}
+                  >
                     {parsedPreview.type === 'card_purchase' ? 'Compra Tarjeta' : parsedPreview.type}
                   </Text>
                 </View>
               </View>
             ) : (
               notificationText.length > 5 && (
-                <View style={styles.warningBox}>
-                  <CustomIcon name="AlertCircle" size={14} color="#F59E0B" />
-                  <Text style={styles.warningText}>
+                <View style={[styles.warningBox, { backgroundColor: colors.warningBg }]}>
+                  <CustomIcon name="AlertCircle" size={14} color={colors.warning} />
+                  <Text style={[styles.warningText, { color: colors.warningLight }]}>
                     No se detectó un valor claro. Asegúrate de incluir el símbolo $ y el monto.
                   </Text>
                 </View>
@@ -186,7 +235,11 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
 
             {/* Botón de Aplicar */}
             <TouchableOpacity
-              style={[styles.applyBtn, !parsedPreview && styles.applyBtnDisabled]}
+              style={[
+                styles.applyBtn,
+                { backgroundColor: colors.primary },
+                !parsedPreview && styles.applyBtnDisabled,
+              ]}
               disabled={!parsedPreview}
               onPress={handleApplyParsed}
             >
@@ -202,14 +255,12 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
 
 const styles = StyleSheet.create({
   iconTrigger: {
-    backgroundColor: Theme.colors.surfaceElevated,
     width: 42,
     height: 42,
     borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
   },
   iconBadge: {
     position: 'absolute',
@@ -218,9 +269,7 @@ const styles = StyleSheet.create({
     width: 9,
     height: 9,
     borderRadius: 5,
-    backgroundColor: '#10B981',
     borderWidth: 1.5,
-    borderColor: Theme.colors.surfaceElevated,
   },
   islandPill: {
     flexDirection: 'row',
@@ -253,7 +302,7 @@ const styles = StyleSheet.create({
   },
   islandText: {
     color: '#E0E7FF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
   islandBadge: {
@@ -264,21 +313,19 @@ const styles = StyleSheet.create({
   },
   islandBadgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
     justifyContent: 'center',
     padding: 16,
   },
   modalContent: {
-    backgroundColor: Theme.colors.surface,
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   header: {
     flexDirection: 'row',
@@ -295,47 +342,38 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   tag: {
-    color: '#F59E0B',
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: 'bold',
     letterSpacing: 1,
   },
   title: {
-    color: '#FFFFFF',
     fontSize: 17,
     fontWeight: 'bold',
   },
   closeBtn: {
-    backgroundColor: Theme.colors.surfaceElevated,
     padding: 6,
     borderRadius: 16,
   },
   instruction: {
-    color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 13,
     marginBottom: 10,
     lineHeight: 18,
   },
   textArea: {
-    backgroundColor: Theme.colors.surfaceElevated,
     borderRadius: 12,
     padding: 12,
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     minHeight: 80,
     textAlignVertical: 'top',
     borderWidth: 1,
-    borderColor: '#334155',
     marginBottom: 10,
   },
   sampleLabel: {
-    color: '#64748B',
-    fontSize: 11,
+    fontSize: 13,
     marginBottom: 6,
   },
   samplesRow: {
@@ -345,24 +383,19 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sampleChip: {
-    backgroundColor: Theme.colors.surfaceCard,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#334155',
   },
   sampleChipText: {
-    color: '#818CF8',
-    fontSize: 11,
+    fontSize: 13,
   },
   previewCard: {
-    backgroundColor: '#0F172A',
     borderRadius: 12,
     padding: 12,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
   },
   previewHeader: {
     flexDirection: 'row',
@@ -371,8 +404,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   previewTitle: {
-    color: '#10B981',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   previewRow: {
@@ -381,32 +413,27 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   previewLabel: {
-    color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 13,
   },
   previewVal: {
-    color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
   },
   warningBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
     padding: 10,
     borderRadius: 8,
     marginBottom: 14,
     gap: 6,
   },
   warningText: {
-    color: '#FBBF24',
-    fontSize: 11,
+    fontSize: 13,
     flex: 1,
   },
   applyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Theme.colors.primary,
     paddingVertical: 12,
     borderRadius: 12,
     gap: 6,

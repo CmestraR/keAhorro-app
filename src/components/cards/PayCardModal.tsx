@@ -2,11 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   Modal,
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  TextInput,
   Dimensions,
 } from 'react-native';
 import { CreditCard, CardStatementSummary } from '../../types/finance.ts';
@@ -16,6 +13,8 @@ import { formatCurrency, formatInputNumber, parseInputNumber } from '../../utils
 import { getIssuerPolicy } from '../../utils/issuerPolicies/index.ts';
 import { Theme } from '../common/Theme.ts';
 import { CustomIcon } from '../common/CustomIcon.tsx';
+import { Text, TextInput } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 
 interface PayCardModalProps {
   visible: boolean;

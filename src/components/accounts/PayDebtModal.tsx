@@ -2,11 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  TextInput,
   Switch,
 } from 'react-native';
 import { Account, CreditCard, CardPurchase, Transaction } from '../../types/finance';
@@ -16,6 +13,8 @@ import { formatCurrency, formatInputNumber, parseInputNumber } from '../../utils
 import { calculateMonthlyQuota, generateAmortizationSchedule } from '../../utils/financialMath';
 import { Theme } from '../common/Theme';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text, TextInput } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 
 interface PayDebtModalProps {
   visible: boolean;

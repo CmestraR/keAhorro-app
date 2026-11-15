@@ -1,11 +1,14 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Account } from '../../types/finance';
 import { useFinancial } from '../../context/FinancialContext';
 import { useAlert } from '../../context/AlertContext';
+import { useAppTheme } from '../../context/ThemeContext';
 import { formatCurrency } from '../../utils/formatters';
-import { Theme } from '../common/Theme';
+import { alpha } from '../common/Theme';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 
 interface AccountCardProps {
   account: Account;
@@ -20,6 +23,7 @@ export const AccountCard: React.FC<AccountCardProps> = ({
 }) => {
   const { deleteAccount, currency, isBalanceHidden } = useFinancial();
   const { showConfirm, showSuccess } = useAlert();
+  const { colors } = useAppTheme();
 
   const handleLongPress = () => {
     showConfirm(
@@ -61,59 +65,106 @@ export const AccountCard: React.FC<AccountCardProps> = ({
     <TouchableOpacity
       style={[
         styles.card,
-        isDebt && styles.debtCard,
+        {
+          backgroundColor: isDebt ? colors.debtSurface : colors.surfaceCard,
+          borderColor: isDebt ? alpha(colors.danger, 0.35) : colors.border,
+        },
       ]}
       onPress={onPress}
       onLongPress={handleLongPress}
       activeOpacity={0.8}
     >
       <View style={styles.topRow}>
-        <View style={[styles.iconBox, { backgroundColor: account.color + '20' }]}>
-          <CustomIcon name={account.icon || (isDebt ? 'Receipt' : 'Landmark')} size={18} color={account.color} />
+        <View style={[styles.iconBox, { backgroundColor: alpha(account.color || colors.primary, 0.16) }]}>
+          <CustomIcon
+            name={account.icon || (isDebt ? 'Receipt' : 'Landmark')}
+            size={18}
+            color={account.color || colors.primary}
+          />
         </View>
-        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           {isDebt && (
-            <View style={[styles.typeBadge, styles.debtBadge]}>
-              <Text style={styles.debtBadgeText}>DEUDA</Text>
+            <View
+              style={[
+                styles.typeBadge,
+                {
+                  backgroundColor: colors.dangerBg,
+                  borderColor: alpha(colors.danger, 0.4),
+                  borderWidth: 1,
+                },
+              ]}
+            >
+              <Text style={[styles.debtBadgeText, { color: colors.danger }]}>DEUDA</Text>
             </View>
           )}
           {account.hasGmf4x1000 && (
-            <View style={[styles.typeBadge, styles.gmfBadge]}>
-              <Text style={styles.gmfBadgeText}>4x1000</Text>
+            <View
+              style={[
+                styles.typeBadge,
+                {
+                  backgroundColor: colors.dangerBg,
+                  borderColor: alpha(colors.danger, 0.4),
+                  borderWidth: 1,
+                },
+              ]}
+            >
+              <Text style={[styles.gmfBadgeText, { color: colors.danger }]}>4x1000</Text>
             </View>
           )}
           {account.includeInTotal === false && !isDebt && (
-            <View style={[styles.typeBadge, styles.separatedBadge]}>
-              <Text style={styles.separatedBadgeText}>Separado</Text>
+            <View
+              style={[
+                styles.typeBadge,
+                {
+                  backgroundColor: colors.warningBg,
+                  borderColor: colors.warning,
+                  borderWidth: 1,
+                },
+              ]}
+            >
+              <Text style={[styles.separatedBadgeText, { color: colors.warning }]}>Separado</Text>
             </View>
           )}
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeBadgeText}>{getTypeName(account.type)}</Text>
+          <View style={[styles.typeBadge, { backgroundColor: colors.surfaceElevated }]}>
+            <Text style={[styles.typeBadgeText, { color: colors.textSecondary }]}>
+              {getTypeName(account.type)}
+            </Text>
           </View>
         </View>
       </View>
 
-      <Text style={styles.accountName} numberOfLines={1}>
+      <Text style={[styles.accountName, { color: colors.textPrimary }]} numberOfLines={1}>
         {account.name}
       </Text>
-      <Text style={styles.bankName}>{account.bankName}</Text>
+      <Text style={[styles.bankName, { color: colors.textSecondary }]}>
+        {account.bankName}
+        {!isDebt && !account.hasGmf4x1000 ? ' • Exenta de 4x1000' : ''}
+      </Text>
 
-      <View style={styles.balanceSection}>
+      <View style={[styles.balanceSection, { borderTopColor: colors.divider }]}>
         <View style={styles.balanceRow}>
           <View>
-            <Text style={styles.balanceLabel}>
+            <Text style={[styles.balanceLabel, { color: colors.textMuted }]}>
               {isDebt ? 'Deuda Pendiente' : 'Saldo Disponible'}
             </Text>
             <Text
               style={[
                 styles.balanceValue,
-                isDebt && { color: debtOwed > 0 ? '#EF4444' : '#10B981' },
+                {
+                  color: isDebt
+                    ? debtOwed > 0
+                      ? colors.danger
+                      : colors.success
+                    : colors.successLight,
+                },
               ]}
             >
               {isBalanceHidden
                 ? '••••••'
                 : isDebt
-                ? debtOwed > 0 ? `-${formatCurrency(debtOwed, currency)}` : '$0 (Al día)'
+                ? debtOwed > 0
+                  ? `-${formatCurrency(debtOwed, currency)}`
+                  : '$0 (Al día)'
                 : formatCurrency(account.balance, currency)}
             </Text>
           </View>
@@ -121,11 +172,11 @@ export const AccountCard: React.FC<AccountCardProps> = ({
           {/* Botón de Pagar/Abonar si es cuenta de deuda y debe dinero */}
           {isDebt && onPayDebt && (
             <TouchableOpacity
-              style={styles.payDebtBtn}
+              style={[styles.payDebtBtn, { backgroundColor: colors.success }]}
               onPress={onPayDebt}
               activeOpacity={0.8}
             >
-              <CustomIcon name="CreditCard" size={13} color="#FFFFFF" />
+              <CustomIcon name="CreditCard" size={14} color="#FFFFFF" />
               <Text style={styles.payDebtBtnText}>Pagar / Abonar</Text>
             </TouchableOpacity>
           )}
@@ -137,21 +188,15 @@ export const AccountCard: React.FC<AccountCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Theme.colors.surfaceCard,
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#1E293B',
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
-  },
-  debtCard: {
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-    backgroundColor: '#16131E',
   },
   topRow: {
     flexDirection: 'row',
@@ -167,61 +212,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   typeBadge: {
-    backgroundColor: Theme.colors.surfaceElevated,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
   typeBadgeText: {
-    color: '#94A3B8',
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: 'bold',
     textTransform: 'uppercase',
   },
-  debtBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.18)',
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    borderWidth: 1,
-  },
   debtBadgeText: {
-    color: '#F87171',
     fontWeight: 'bold',
-    fontSize: 10,
-  },
-  gmfBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    borderColor: 'rgba(239, 68, 68, 0.4)',
-    borderWidth: 1,
+    fontSize: 13,
   },
   gmfBadgeText: {
-    color: '#F87171',
     fontWeight: 'bold',
-    fontSize: 10,
-  },
-  separatedBadge: {
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    borderColor: '#F59E0B',
-    borderWidth: 1,
+    fontSize: 13,
   },
   separatedBadgeText: {
-    color: '#FBBF24',
-    fontSize: 10,
+    fontSize: 13,
+    fontWeight: '600',
   },
   accountName: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
   bankName: {
-    color: '#94A3B8',
-    fontSize: 12,
-    marginTop: 1,
+    fontSize: 13,
+    marginTop: 2,
     marginBottom: 12,
   },
   balanceSection: {
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
-    paddingTop: 8,
+    paddingTop: 10,
   },
   balanceRow: {
     flexDirection: 'row',
@@ -229,11 +252,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   balanceLabel: {
-    color: '#64748B',
-    fontSize: 11,
+    fontSize: 13,
   },
   balanceValue: {
-    color: '#34D399',
     fontSize: 18,
     fontWeight: 'bold',
     marginTop: 2,
@@ -242,14 +263,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#10B981',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 8,
   },
   payDebtBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
   },
 });

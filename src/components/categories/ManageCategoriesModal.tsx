@@ -2,11 +2,8 @@ import React, { useState } from 'react';
 import {
   Modal,
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
-  TextInput,
   Alert,
 } from 'react-native';
 import { Category } from '../../types/finance';
@@ -14,6 +11,8 @@ import { useFinancial } from '../../context/FinancialContext';
 import { useAlert } from '../../context/AlertContext';
 import { Theme } from '../common/Theme';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text, TextInput } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
 
 interface ManageCategoriesModalProps {
   visible: boolean;

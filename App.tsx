@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   StatusBar,
   Platform,
@@ -11,20 +9,25 @@ import {
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FinancialProvider, useFinancial } from './src/context/FinancialContext';
 import { AlertProvider, useAlert } from './src/context/AlertContext';
+import { ThemeProvider, useAppTheme } from './src/context/ThemeContext';
 import { NotificationService } from './src/utils/notificationService';
 import { UpdateService } from './src/utils/updateService';
+import { loadAppFonts } from './src/utils/fonts';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { CardsScreen } from './src/screens/CardsScreen';
 import { AccountsScreen } from './src/screens/AccountsScreen';
 import { TransactionsScreen } from './src/screens/TransactionsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { AddTransactionModal } from './src/components/transactions/AddTransactionModal';
-import { Theme } from './src/components/common/Theme';
 import { CustomIcon } from './src/components/common/CustomIcon';
+import { Text } from './src/components/common/AppText';
+import { TouchableOpacity } from './src/components/common/Touchable';
+import { FadeSlideIn } from './src/components/common/FadeSlideIn';
 
 function MainApp() {
   const { isLoading, creditCards } = useFinancial();
   const { showConfirm, showSuccess } = useAlert();
+  const { colors, isDark } = useAppTheme();
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'accounts' | 'transactions' | 'settings'>('dashboard');
   const [filterAccountId, setFilterAccountId] = useState<string | null>(null);
@@ -76,10 +79,13 @@ function MainApp() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
-        <ActivityIndicator size="large" color={Theme.colors.primary} />
-        <Text style={styles.loadingText}>Cargando tus finanzas...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={colors.background}
+        />
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.textMuted }]}>Cargando tus finanzas...</Text>
       </View>
     );
   }
@@ -115,19 +121,29 @@ function MainApp() {
   ];
 
   return (
-    <View style={[styles.container, { paddingTop: topSafePadding }]}>
+    <View style={[styles.container, { paddingTop: topSafePadding, backgroundColor: colors.background }]}>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={Theme.colors.background}
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.background}
         translucent={true}
       />
 
-      {/* Pantalla Activa */}
-      <View style={styles.screenContainer}>{renderActiveScreen()}</View>
+      {/* Pantalla Activa con transición suave (fade + slide-up 200ms) */}
+      <FadeSlideIn key={activeTab} style={styles.screenContainer}>
+        {renderActiveScreen()}
+      </FadeSlideIn>
 
       {/* Barra de Navegación Inferior Flotante con Botón Central */}
       <View style={[styles.bottomNavWrapper, { paddingBottom: bottomSafePadding }]}>
-        <View style={styles.bottomNav}>
+        <View
+          style={[
+            styles.bottomNav,
+            {
+              backgroundColor: colors.navBackground,
+              borderColor: colors.border,
+            },
+          ]}
+        >
           {navItems.map((item) => {
             const isActive = activeTab === item.id;
             const isCenterAction = item.isAction;
@@ -140,10 +156,21 @@ function MainApp() {
                   onPress={() => setIsAddModalOpen(true)}
                   activeOpacity={0.8}
                 >
-                  <View style={styles.centerIconWrapper}>
+                  <View
+                    style={[
+                      styles.centerIconWrapper,
+                      {
+                        backgroundColor: colors.success,
+                        shadowColor: colors.success,
+                        borderColor: colors.background,
+                      },
+                    ]}
+                  >
                     <CustomIcon name="Plus" size={24} color="#FFFFFF" />
                   </View>
-                  <Text style={styles.centerNavLabel}>{item.label}</Text>
+                  <Text style={[styles.centerNavLabel, { color: colors.successLight }]}>
+                    {item.label}
+                  </Text>
                 </TouchableOpacity>
               );
             }
@@ -163,19 +190,20 @@ function MainApp() {
                 <View
                   style={[
                     styles.iconWrapper,
-                    isActive && styles.iconWrapperActive,
+                    isActive && { backgroundColor: colors.primary },
                   ]}
                 >
                   <CustomIcon
                     name={item.icon}
                     size={19}
-                    color={isActive ? '#FFFFFF' : '#64748B'}
+                    color={isActive ? '#FFFFFF' : colors.textMuted}
                   />
                 </View>
                 <Text
                   style={[
                     styles.navLabel,
-                    isActive && styles.navLabelActive,
+                    { color: colors.textMuted },
+                    isActive && { color: colors.textPrimary, fontWeight: '700' },
                   ]}
                 >
                   {item.label}
@@ -196,13 +224,23 @@ function MainApp() {
 }
 
 export default function App() {
+  const [, setFontsTick] = useState(0);
+
+  useEffect(() => {
+    loadAppFonts().then((loaded) => {
+      if (loaded) setFontsTick((n) => n + 1);
+    });
+  }, []);
+
   return (
     <SafeAreaProvider>
-      <AlertProvider>
-        <FinancialProvider>
-          <MainApp />
-        </FinancialProvider>
-      </AlertProvider>
+      <ThemeProvider>
+        <AlertProvider>
+          <FinancialProvider>
+            <MainApp />
+          </FinancialProvider>
+        </AlertProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
@@ -210,20 +248,17 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
   },
   screenContainer: {
     flex: 1,
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: Theme.colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
   },
   loadingText: {
-    color: '#94A3B8',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -237,17 +272,15 @@ const styles = StyleSheet.create({
   },
   bottomNav: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(17, 24, 39, 0.96)',
     borderRadius: 26,
     paddingVertical: 6,
     paddingHorizontal: 8,
     borderWidth: 1,
-    borderColor: '#1E293B',
     alignItems: 'center',
     elevation: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.3,
     shadowRadius: 12,
   },
   navTab: {
@@ -263,9 +296,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  iconWrapperActive: {
-    backgroundColor: Theme.colors.primary,
-  },
   centerNavBtn: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -276,31 +306,22 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 23,
-    backgroundColor: '#10B981',
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 8,
-    shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.45,
     shadowRadius: 8,
     borderWidth: 3,
-    borderColor: '#0F172A',
   },
   centerNavLabel: {
-    color: '#34D399',
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: '700',
     marginTop: 2,
   },
   navLabel: {
-    color: '#64748B',
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: '600',
     marginTop: 2,
-  },
-  navLabelActive: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
   },
 });

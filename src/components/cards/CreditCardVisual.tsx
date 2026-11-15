@@ -1,11 +1,14 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CreditCard, CardStatementSummary } from '../../types/finance';
 import { formatCurrency } from '../../utils/formatters';
 import { useFinancial } from '../../context/FinancialContext';
 import { Theme } from '../common/Theme';
 import { CustomIcon } from '../common/CustomIcon';
+import { Text } from '../common/AppText';
+import { TouchableOpacity } from '../common/Touchable';
+import { AnimatedBar } from '../common/AnimatedBar';
 
 interface CreditCardVisualProps {
   card: CreditCard;
@@ -47,6 +50,9 @@ export const CreditCardVisual: React.FC<CreditCardVisualProps> = ({
     ? card.colorGradient 
     : Theme.colors.cardGradients[0];
 
+  const barColor =
+    usedPercentage > 85 ? '#F43F5E' : usedPercentage > 60 ? '#F59E0B' : '#10B981';
+
   return (
     <TouchableOpacity
       activeOpacity={0.9}
@@ -84,7 +90,7 @@ export const CreditCardVisual: React.FC<CreditCardVisualProps> = ({
           <View style={styles.summarySpacer} />
         )}
 
-        {/* Barra de Cupo */}
+        {/* Barra de Cupo Animada */}
         <View style={styles.limitSection}>
           <View style={styles.limitHeader}>
             <Text style={styles.limitLabel}>Cupo Disponible</Text>
@@ -94,14 +100,10 @@ export const CreditCardVisual: React.FC<CreditCardVisualProps> = ({
           </View>
 
           <View style={styles.progressBarBg}>
-            <View
-              style={[
-                styles.progressBarFill,
-                {
-                  width: `${100 - usedPercentage}%`,
-                  backgroundColor: usedPercentage > 85 ? '#EF4444' : usedPercentage > 60 ? '#F59E0B' : '#10B981',
-                },
-              ]}
+            <AnimatedBar
+              percent={100 - usedPercentage}
+              color={barColor}
+              style={styles.progressBarFill}
             />
           </View>
 
@@ -123,7 +125,7 @@ export const CreditCardVisual: React.FC<CreditCardVisualProps> = ({
               <CustomIcon
                 name={isCutOffPassed ? 'CheckCircle2' : 'Calendar'}
                 size={13}
-                color={isCutOffPassed ? '#F87171' : '#CBD5E1'}
+                color={isCutOffPassed ? '#FBBF24' : '#CBD5E1'}
               />
               <Text style={[styles.dateTitle, isCutOffPassed && styles.dateTitleCutPassed]}>
                 Día de Corte: {card.cutOffDay}
@@ -144,7 +146,7 @@ export const CreditCardVisual: React.FC<CreditCardVisualProps> = ({
               <CustomIcon
                 name="AlertCircle"
                 size={13}
-                color={daysToPayment <= 5 || isPaymentOverdue ? '#F87171' : '#CBD5E1'}
+                color={daysToPayment <= 5 || isPaymentOverdue ? '#FB7185' : '#CBD5E1'}
               />
               <Text style={[styles.dateTitle, (daysToPayment <= 5 || isPaymentOverdue) && styles.dateTitleUrgent]}>
                 Día de Pago: {card.paymentDueDay}
@@ -165,21 +167,21 @@ export const CreditCardVisual: React.FC<CreditCardVisualProps> = ({
           <View style={styles.actionsRow}>
             {onViewStatement && (
               <TouchableOpacity style={styles.actionBtn} onPress={onViewStatement}>
-                <CustomIcon name="FileText" size={13} color="#FFFFFF" />
+                <CustomIcon name="FileText" size={14} color="#FFFFFF" />
                 <Text style={styles.actionBtnText} numberOfLines={1}>Extracto</Text>
               </TouchableOpacity>
             )}
 
             {onAddPurchase && (
               <TouchableOpacity style={[styles.actionBtn, styles.actionBtnAccent]} onPress={onAddPurchase}>
-                <CustomIcon name="Plus" size={13} color="#FFFFFF" />
+                <CustomIcon name="Plus" size={14} color="#FFFFFF" />
                 <Text style={styles.actionBtnText} numberOfLines={1}>Compra</Text>
               </TouchableOpacity>
             )}
 
             {onPayCard && (
               <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPay]} onPress={onPayCard}>
-                <CustomIcon name="CheckCircle2" size={13} color="#FFFFFF" />
+                <CustomIcon name="CheckCircle2" size={14} color="#FFFFFF" />
                 <Text style={styles.actionBtnText} numberOfLines={1}>Abonar</Text>
               </TouchableOpacity>
             )}
@@ -218,10 +220,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bankName: {
-    color: '#94A3B8',
-    fontSize: 11,
+    color: '#CBD5E1',
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 1.2,
+    letterSpacing: 1,
   },
   cardName: {
     color: '#FFFFFF',
@@ -239,7 +241,7 @@ const styles = StyleSheet.create({
   },
   brandText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
     letterSpacing: 1,
   },
@@ -271,13 +273,13 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,0,0,0.25)',
   },
   cardNumber: {
-    color: 'rgba(255, 255, 255, 0.85)',
+    color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 14,
     letterSpacing: 2,
     fontWeight: '600',
   },
   limitSection: {
-    backgroundColor: 'rgba(0, 0, 0, 0.25)',
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
     padding: 10,
     borderRadius: 12,
     marginBottom: 12,
@@ -289,8 +291,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   limitLabel: {
-    color: '#CBD5E1',
-    fontSize: 12,
+    color: '#E2E8F0',
+    fontSize: 13,
     fontWeight: '500',
   },
   limitValue: {
@@ -299,14 +301,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   progressBarBg: {
-    height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 3,
+    height: 7,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    borderRadius: 4,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 4,
   },
   limitFooter: {
     flexDirection: 'row',
@@ -314,8 +316,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   limitSub: {
-    color: '#94A3B8',
-    fontSize: 11,
+    color: '#CBD5E1',
+    fontSize: 13,
   },
   datesGrid: {
     flexDirection: 'row',
@@ -331,20 +333,20 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   dateBoxUrgent: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    borderColor: 'rgba(239, 68, 68, 0.4)',
+    backgroundColor: 'rgba(244, 63, 94, 0.22)',
+    borderColor: 'rgba(244, 63, 94, 0.45)',
   },
   dateBoxCutPassed: {
-    backgroundColor: 'rgba(239, 68, 68, 0.18)',
-    borderColor: 'rgba(239, 68, 68, 0.45)',
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    borderColor: 'rgba(245, 158, 11, 0.45)',
     borderWidth: 1,
   },
   dateTitleCutPassed: {
-    color: '#FCA5A5',
+    color: '#FDE68A',
     fontWeight: 'bold',
   },
   dateSubtitleCutPassed: {
-    color: '#F87171',
+    color: '#FBBF24',
     fontWeight: 'bold',
   },
   dateIconRow: {
@@ -353,21 +355,21 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   dateTitle: {
-    color: '#CBD5E1',
-    fontSize: 11,
+    color: '#E2E8F0',
+    fontSize: 13,
     fontWeight: '600',
   },
   dateTitleUrgent: {
-    color: '#FCA5A5',
+    color: '#FECDD3',
   },
   dateSubtitle: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: 'bold',
     marginTop: 2,
   },
   dateSubtitleUrgent: {
-    color: '#F87171',
+    color: '#FB7185',
   },
   actionsRow: {
     flexDirection: 'row',
@@ -381,21 +383,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingVertical: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    paddingVertical: 9,
     paddingHorizontal: 4,
     borderRadius: 8,
     gap: 4,
   },
   actionBtnAccent: {
-    backgroundColor: 'rgba(99, 102, 241, 0.7)',
+    backgroundColor: 'rgba(99, 102, 241, 0.78)',
   },
   actionBtnPay: {
-    backgroundColor: 'rgba(16, 185, 129, 0.7)',
+    backgroundColor: 'rgba(16, 185, 129, 0.78)',
   },
   actionBtnText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '700',
   },
 });
