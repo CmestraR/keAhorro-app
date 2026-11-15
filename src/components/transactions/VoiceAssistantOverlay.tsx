@@ -23,15 +23,7 @@ import { CustomIcon } from '../common/CustomIcon';
 import { Text } from '../common/AppText';
 import { TouchableOpacity } from '../common/Touchable';
 
-// Carga segura de módulos nativos de voz/audio (evita crash si el APK aún no fue recompilado)
-let ExpoSpeechRecognitionModule: any = null;
-try {
-  const speechPkg = require('expo-speech-recognition');
-  ExpoSpeechRecognitionModule = speechPkg?.ExpoSpeechRecognitionModule || null;
-} catch {
-  ExpoSpeechRecognitionModule = null;
-}
-
+// Carga segura de módulos oficiales Expo SDK 54 (expo-av y expo-file-system)
 let ExpoAudio: any = null;
 try {
   const avPkg = require('expo-av');
@@ -98,7 +90,6 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
   const wasHoldingRef = useRef(false);
   const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const webRecognitionRef = useRef<any>(null);
-  const nativeSpeechSubRef = useRef<any>(null);
   const audioRecordingRef = useRef<any>(null);
 
   const dotPulseAnim = useRef(new Animated.Value(1)).current;
@@ -122,7 +113,7 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
     finalTranscript: string;
     audioBase64?: string;
   }> => {
-    // 1. Detener Web Speech API
+    // 1. Detener Web Speech API (Web)
     if (webRecognitionRef.current) {
       try {
         webRecognitionRef.current.stop();
@@ -130,20 +121,7 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
       webRecognitionRef.current = null;
     }
 
-    // 2. Detener ExpoSpeechRecognition nativo
-    if (ExpoSpeechRecognitionModule) {
-      try {
-        ExpoSpeechRecognitionModule.stop();
-      } catch {}
-    }
-    if (nativeSpeechSubRef.current) {
-      try {
-        nativeSpeechSubRef.current.remove();
-      } catch {}
-      nativeSpeechSubRef.current = null;
-    }
-
-    // 3. Detener grabación de audio de respaldo (expo-av) y obtener base64 si existe
+    // 2. Detener grabación de audio nativa (expo-av en Android/iOS) y convertir a base64
     let audioBase64: string | undefined;
     if (audioRecordingRef.current) {
       try {
@@ -168,40 +146,8 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
   const startAllCapture = useCallback(async () => {
     setIsListening(true);
 
-    // 1. Intentar ExpoSpeechRecognition nativo (transcripción en vivo en Android/iOS)
-    let startedNativeSpeech = false;
-    if (ExpoSpeechRecognitionModule && Platform.OS !== 'web') {
-      try {
-        const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-        if (perm?.granted) {
-          if (nativeSpeechSubRef.current) {
-            try {
-              nativeSpeechSubRef.current.remove();
-            } catch {}
-          }
-          nativeSpeechSubRef.current = ExpoSpeechRecognitionModule.addListener(
-            'result',
-            (event: any) => {
-              const spoken = event?.results?.[0]?.transcript;
-              if (typeof spoken === 'string' && spoken.trim()) {
-                updateTranscript(spoken.trim());
-              }
-            }
-          );
-          ExpoSpeechRecognitionModule.start({
-            lang: 'es-CO',
-            interimResults: true,
-            continuous: true,
-          });
-          startedNativeSpeech = true;
-        }
-      } catch {
-        startedNativeSpeech = false;
-      }
-    }
-
-    // 2. Si no inició SpeechRecognizer nativo en móvil, iniciar grabación de audio (expo-av) para enviar directo a Gemini
-    if (!startedNativeSpeech && ExpoAudio && Platform.OS !== 'web') {
+    // 1. En Android / iOS: Iniciar grabación nativa de micrófono (expo-av)
+    if (ExpoAudio && Platform.OS !== 'web') {
       try {
         const perm = await ExpoAudio.requestPermissionsAsync();
         if (perm?.granted) {
@@ -209,6 +155,12 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
             allowsRecordingIOS: true,
             playsInSilentModeIOS: true,
           });
+          if (audioRecordingRef.current) {
+            try {
+              await audioRecordingRef.current.stopAndUnloadAsync();
+            } catch {}
+            audioRecordingRef.current = null;
+          }
           const { recording } = await ExpoAudio.Recording.createAsync(
             ExpoAudio.RecordingOptionsPresets.HIGH_QUALITY
           );
@@ -217,7 +169,7 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
       } catch {}
     }
 
-    // 3. En Web, usar Web Speech API
+    // 2. En Web: Usar Web Speech API
     if (typeof window !== 'undefined') {
       const SpeechRecognition =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -256,19 +208,18 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
     isSavingRef.current = true;
     setIsSaving(true);
 
-    // Breve espera de 180ms para que el último fragmento de voz termine de llegar
-    await new Promise((r) => setTimeout(r, 180));
+    await new Promise((r) => setTimeout(r, 150));
     const { finalTranscript, audioBase64 } = await stopAllCapture();
 
-    // Si no se capturó ni voz ni audio al soltar, cerrar el overlay de inmediato (NUNCA quedarse pegado)
+    // Si no se capturó ni voz ni audio al soltar, cerrar el overlay de inmediato
     if (!finalTranscript && !audioBase64) {
       isSavingRef.current = false;
       setIsSaving(false);
       onClose();
-      if (Platform.OS !== 'web' && !ExpoSpeechRecognitionModule && !ExpoAudio) {
+      if (Platform.OS !== 'web' && !ExpoAudio) {
         showWarning(
           'Actualización de APK Requerida',
-          'Para usar el micrófono en vivo en Android, instala el nuevo APK compilado con permiso de micrófono.'
+          'Instala el nuevo APK compilado para activar el permiso nativo de micrófono en Android.'
         );
       }
       return;
@@ -285,6 +236,10 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
         creditCards,
         categories,
       });
+
+      if (extracted.transcripcion) {
+        updateTranscript(extracted.transcripcion);
+      }
 
       if (extracted.monto <= 0) {
         isSavingRef.current = false;
@@ -450,6 +405,7 @@ export const VoiceAssistantOverlay: React.FC<VoiceAssistantOverlayProps> = ({
     showError,
     showWarning,
     stopAllCapture,
+    updateTranscript,
   ]);
 
   // Detectar cuando el usuario mantiene presionado y luego SUELTA el botón (+ o 🎙️)

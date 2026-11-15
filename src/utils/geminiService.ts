@@ -20,6 +20,7 @@ export interface GeminiExtractedTransaction {
   categoriaId: string | null;
   aplica4x1000: boolean;
   resumenHumano: string;
+  transcripcion?: string;
 }
 
 const getTodayISO = (): string => new Date().toISOString().split('T')[0];
@@ -299,7 +300,8 @@ Extrae los datos del movimiento dictado por el usuario y devuelve ÚNICAMENTE un
   "cuotas": number,
   "categoriaId": string | null,
   "aplica4x1000": boolean,
-  "resumenHumano": string
+  "resumenHumano": string,
+  "transcripcion": string
 }
 
 REGLAS ESTRICTAS:
@@ -313,7 +315,8 @@ REGLAS ESTRICTAS:
 8. Si es un gasto de cuenta/efectivo/billetera, usa "tipo": "GASTO" y asigna "cuentaOrigenId" a la cuenta mencionada (o la primera cuenta disponible por defecto).
 9. En montos en pesos colombianos: "10 mil" = 10000, "35 mil" = 35000, "un millón doscientos" = 1200000.
 10. "aplica4x1000": true si es GASTO o TRANSFERENCIA desde una cuenta que tenga cobra4x1000=true (o si el usuario lo pide explícitamente).
-11. "resumenHumano": frase corta, cálida y clara en español confirmando qué se va a registrar.`;
+11. "resumenHumano": frase corta, cálida y clara en español confirmando qué se va a registrar.
+12. "transcripcion": texto exacto en español de lo que dijo el usuario en el audio.`;
 
       const userParts: any[] = [];
       if (audioBase64) {
@@ -488,6 +491,7 @@ function normalizeExtractedTransaction(
     categoriaId,
     aplica4x1000,
     resumenHumano,
+    transcripcion: typeof raw.transcripcion === 'string' ? raw.transcripcion.trim() : undefined,
   };
 }
 

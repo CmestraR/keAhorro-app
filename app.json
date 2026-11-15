@@ -31,8 +31,7 @@
     "plugins": [
       "expo-sqlite",
       "expo-notifications",
-      "expo-font",
-      "expo-speech-recognition"
+      "expo-font"
     ],
     "extra": {
       "eas": {
