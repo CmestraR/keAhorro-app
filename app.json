@@ -31,7 +31,8 @@
     "plugins": [
       "expo-sqlite",
       "expo-notifications",
-      "expo-font"
+      "expo-font",
+      "./plugins/withBankNotificationListener"
     ],
     "extra": {
       "eas": {

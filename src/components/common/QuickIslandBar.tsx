@@ -7,8 +7,10 @@ import {
   Switch,
   Pressable,
   ActivityIndicator,
+  AppState,
 } from 'react-native';
 import { parseBankNotification, ParsedBankMessage } from '../../utils/bankNotificationParser';
+import { NativeNotificationListener } from '../../utils/nativeNotificationListener';
 import {
   AutoImportedNotificationLog,
   getAutoImportedHistory,
@@ -88,6 +90,13 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({
   const [autoSaveMode, setAutoSaveMode] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [historyLogs, setHistoryLogs] = useState<AutoImportedNotificationLog[]>([]);
+  const [hasBgPermission, setHasBgPermission] = useState(false);
+  const isNativeServiceAvailable = NativeNotificationListener.isAvailable();
+
+  const checkBgPermission = useCallback(async () => {
+    const granted = await NativeNotificationListener.hasPermission();
+    setHasBgPermission(granted);
+  }, []);
 
   const loadHistory = useCallback(async () => {
     const list = await getAutoImportedHistory();
@@ -97,8 +106,19 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({
   useEffect(() => {
     if (isModalOpen) {
       loadHistory();
+      checkBgPermission();
     }
-  }, [isModalOpen, loadHistory]);
+  }, [isModalOpen, loadHistory, checkBgPermission]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && isModalOpen) {
+        checkBgPermission();
+        loadHistory();
+      }
+    });
+    return () => sub.remove();
+  }, [isModalOpen, checkBgPermission, loadHistory]);
 
   const handleTextChange = (text: string) => {
     setNotificationText(text);
@@ -271,6 +291,68 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.scrollBody}
             >
+              {/* Estado del Servicio Nativo en 2do Plano (Android NotificationListenerService) */}
+              <View
+                style={[
+                  styles.autoSwitchCard,
+                  {
+                    backgroundColor: colors.surfaceCard,
+                    borderColor: hasBgPermission
+                      ? colors.success
+                      : isNativeServiceAvailable
+                      ? colors.warning
+                      : colors.danger,
+                    flexDirection: 'column',
+                    alignItems: 'stretch',
+                    gap: 10,
+                  },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <CustomIcon
+                    name={hasBgPermission ? 'CheckCircle2' : 'AlertCircle'}
+                    size={18}
+                    color={
+                      hasBgPermission
+                        ? colors.success
+                        : isNativeServiceAvailable
+                        ? colors.warning
+                        : colors.danger
+                    }
+                  />
+                  <Text style={[styles.autoSwitchTitle, { color: colors.textPrimary, flex: 1 }]}>
+                    {hasBgPermission
+                      ? 'Escucha en 2do Plano Activa (24/7)'
+                      : isNativeServiceAvailable
+                      ? 'Permiso de Lectura en 2do Plano Pendiente'
+                      : 'Requiere Instalar el Nuevo APK Compilado'}
+                  </Text>
+                </View>
+
+                <Text style={[styles.autoSwitchSub, { color: colors.textSecondary, marginTop: 0 }]}>
+                  {hasBgPermission
+                    ? 'keAhorro está autorizado por Android para leer automáticamente tus SMS de Bancolombia (85784) y notificaciones de RappiCard, Nequi y Nu en segundo plano.'
+                    : isNativeServiceAvailable
+                    ? 'Para que Android permita a keAhorro leer los SMS de Bancolombia (85784) y notificaciones de otros bancos en segundo plano, toca el botón y activa el interruptor de keAhorro.'
+                    : 'Las actualizaciones rápidas OTA no pueden instalar servicios nativos de 2do plano en Android. Instala el nuevo APK para habilitar el servicio NotificationListenerService.'}
+                </Text>
+
+                {isNativeServiceAvailable && !hasBgPermission && (
+                  <TouchableOpacity
+                    style={[
+                      styles.primaryAutoBtn,
+                      { backgroundColor: colors.warning, minHeight: 42 },
+                    ]}
+                    onPress={() => NativeNotificationListener.openPermissionSettings()}
+                  >
+                    <CustomIcon name="Settings" size={16} color="#0F172A" />
+                    <Text style={[styles.primaryAutoBtnText, { color: '#0F172A' }]}>
+                      Dar Permiso de Acceso a Notificaciones
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
               {/* Switch de Guardado Automático + Notificación Push */}
               <View
                 style={[

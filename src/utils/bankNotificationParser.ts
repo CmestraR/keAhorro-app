@@ -120,18 +120,22 @@ export function parseBankNotification(text: string): ParsedBankMessage | null {
 
   // 2. Extraer Monto en COP
   let amount = 0;
-  const currencyPatterns = [
-    /(?:\$|COP)\s*([\d.,]+(?:\.\d{2}|,\d{2})?)/i,
-    /(?:por|de|valor|monto|gastaste|compraste|recibiste|transferiste|enviaste|pagaste|retiraste)\s+\$?\s*([\d.,]+(?:\.\d{2}|,\d{2})?)/i,
-  ];
+  const explicitCurrencyMatch = clean.match(/(?:\$|COP)\s*([\d.,]+(?:\.\d{2}|,\d{2})?)/i);
+  if (explicitCurrencyMatch && explicitCurrencyMatch[1]) {
+    const parsed = parseColombianAmount(explicitCurrencyMatch[1]);
+    if (parsed >= 1) {
+      amount = parsed;
+    }
+  }
 
-  for (const regex of currencyPatterns) {
-    const match = clean.match(regex);
-    if (match && match[1]) {
-      const parsed = parseColombianAmount(match[1]);
-      if (parsed >= 100) {
+  if (amount <= 0) {
+    const fallbackVerbMatch = clean.match(
+      /(?:por|valor|monto|gastaste|compraste|recibiste|transferiste|enviaste|pagaste|retiraste)\s+(?:de\s+|por\s+)?\$?\s*([\d.,]+(?:\.\d{2}|,\d{2})?)/i
+    );
+    if (fallbackVerbMatch && fallbackVerbMatch[1]) {
+      const parsed = parseColombianAmount(fallbackVerbMatch[1]);
+      if (parsed >= 1) {
         amount = parsed;
-        break;
       }
     }
   }

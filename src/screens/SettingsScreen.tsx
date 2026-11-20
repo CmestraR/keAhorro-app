@@ -12,6 +12,7 @@ import { useAlert } from '../context/AlertContext';
 import { useAppTheme } from '../context/ThemeContext';
 import { useAI } from '../context/AIContext';
 import { NotificationService } from '../utils/notificationService';
+import { NativeNotificationListener } from '../utils/nativeNotificationListener';
 import { Layout, alpha } from '../components/common/Theme';
 import { CustomIcon } from '../components/common/CustomIcon';
 import { Text } from '../components/common/AppText';
@@ -179,7 +180,7 @@ export const SettingsScreen: React.FC = () => {
                 backgroundColor: alpha(colors.primary, 0.14),
                 borderColor: alpha(colors.primary, 0.35),
                 borderWidth: 1,
-                marginBottom: 0,
+                marginBottom: 10,
               },
             ]}
             onPress={openAISettingsModal}
@@ -196,6 +197,41 @@ export const SettingsScreen: React.FC = () => {
               </Text>
             </View>
             <CustomIcon name="ChevronRight" size={18} color={colors.primaryLight} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.actionRow,
+              {
+                backgroundColor: alpha(colors.success, 0.14),
+                borderColor: alpha(colors.success, 0.35),
+                borderWidth: 1,
+                marginBottom: 0,
+              },
+            ]}
+            onPress={async () => {
+              if (NativeNotificationListener.isAvailable()) {
+                await NativeNotificationListener.openPermissionSettings();
+              } else {
+                showWarning(
+                  'Nuevo APK Requerido',
+                  'Para que Android habilite el permiso de Acceso a Notificaciones en 2do plano, instala el nuevo APK compilado con el servicio NotificationListenerService.'
+                );
+              }
+            }}
+          >
+            <View style={[styles.actionIconBox, { backgroundColor: colors.success }]}>
+              <CustomIcon name="BellRing" size={18} color="#FFFFFF" />
+            </View>
+            <View style={styles.actionTextBox}>
+              <Text style={[styles.actionTitle, { color: colors.textPrimary }]}>
+                Permiso de Lectura de Bancos (2do Plano)
+              </Text>
+              <Text style={[styles.actionSub, { color: colors.textSecondary }]}>
+                Abrir "Acceso a notificaciones" de Android para SMS (85784), Bancolombia, RappiCard, Nequi y Nu.
+              </Text>
+            </View>
+            <CustomIcon name="ChevronRight" size={18} color={colors.success} />
           </TouchableOpacity>
         </View>
 

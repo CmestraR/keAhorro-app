@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
   ActivityIndicator,
   StatusBar,
   Platform,
+  AppState,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FinancialProvider, useFinancial } from './src/context/FinancialContext';
@@ -14,6 +15,7 @@ import { AIProvider, useAI } from './src/context/AIContext';
 import { NotificationService } from './src/utils/notificationService';
 import * as Notifications from 'expo-notifications';
 import { processAndAutoSaveBankNotification } from './src/utils/autoNotificationImporter';
+import { NativeNotificationListener } from './src/utils/nativeNotificationListener';
 import { UpdateService } from './src/utils/updateService';
 import { loadAppFonts } from './src/utils/fonts';
 import { GeminiExtractedTransaction } from './src/utils/geminiService';
@@ -61,13 +63,98 @@ function MainApp() {
     }
   }, [creditCards]);
 
-  // Escucha automática de notificaciones bancarias entrantes (Bancolombia, RappiCard, Nequi, Nu, etc.)
+  // Escucha nativa en 2do plano (NotificationListenerService de Android) para SMS (85784) y apps de bancos
+  const hasPromptedListenerPermRef = useRef(false);
+
+  const drainBackgroundNotifications = useCallback(async () => {
+    if (!NativeNotificationListener.isAvailable()) return;
+    try {
+      const pending = await NativeNotificationListener.consumePendingNotifications();
+      for (const item of pending) {
+        if (!item?.fullText) continue;
+        const res = await processAndAutoSaveBankNotification({
+          rawText: item.fullText,
+          accounts,
+          creditCards,
+          categories,
+          currency,
+          addTransaction,
+          addCardPurchase,
+          addAccount,
+          addCreditCard,
+          sendPushConfirmation: true,
+        });
+        if (res.ok) {
+          showSuccess('🤖 Capturado en 2do Plano', res.message);
+        }
+      }
+    } catch {}
+  }, [
+    accounts,
+    creditCards,
+    categories,
+    currency,
+    addTransaction,
+    addCardPurchase,
+    addAccount,
+    addCreditCard,
+    showSuccess,
+  ]);
+
   useEffect(() => {
+    if (isLoading) return;
+
+    // 1. Verificar permiso nativo de lectura de notificaciones (BIND_NOTIFICATION_LISTENER_SERVICE)
+    if (NativeNotificationListener.isAvailable() && !hasPromptedListenerPermRef.current) {
+      hasPromptedListenerPermRef.current = true;
+      NativeNotificationListener.hasPermission().then((granted) => {
+        if (!granted) {
+          showConfirm(
+            '🔔 Activar Lectura de Bancos en 2do Plano',
+            'Para que keAhorro detecte y agregue automáticamente tus SMS de Bancolombia (85784) y notificaciones de RappiCard, Nequi y Nu en segundo plano, activa el permiso "Acceso a notificaciones" para keAhorro.',
+            () => {
+              NativeNotificationListener.openPermissionSettings();
+            },
+            'Dar Permiso Ahora',
+            'Más Tarde'
+          );
+        } else {
+          drainBackgroundNotifications();
+        }
+      });
+    }
+
+    // 2. Drenar cola de 2do plano cada vez que la app vuelve al frente
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        drainBackgroundNotifications();
+      }
+    });
+
+    // 3. Escucha en tiempo real de notificaciones de otras apps (SMS 85784, Bancolombia, Rappi, Nequi, Nu)
+    const unsubscribeNative = NativeNotificationListener.subscribe(async (notif) => {
+      const res = await processAndAutoSaveBankNotification({
+        rawText: notif.fullText,
+        accounts,
+        creditCards,
+        categories,
+        currency,
+        addTransaction,
+        addCardPurchase,
+        addAccount,
+        addCreditCard,
+        sendPushConfirmation: true,
+      });
+      if (res.ok) {
+        showSuccess('🤖 Movimiento Automático', res.message);
+      }
+    });
+
+    // 4. Escucha complementaria de notificaciones locales
     const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
       try {
         const content = notification.request.content;
         const data = (content.data || {}) as Record<string, any>;
-        // Ignorar notificaciones propias de confirmación o de recordatorio de corte/pago
         if (
           data.isKeAhorroAutoSaved ||
           data.type === 'cutoff_reminder' ||
@@ -95,15 +182,16 @@ function MainApp() {
         if (res.ok) {
           showSuccess('🤖 Movimiento Automático', res.message);
         }
-      } catch {
-        // Silencioso para notificaciones no bancarias
-      }
+      } catch {}
     });
 
     return () => {
+      appStateSub.remove();
+      unsubscribeNative();
       subscription.remove();
     };
   }, [
+    isLoading,
     accounts,
     creditCards,
     categories,
@@ -113,6 +201,8 @@ function MainApp() {
     addAccount,
     addCreditCard,
     showSuccess,
+    showConfirm,
+    drainBackgroundNotifications,
   ]);
 
   useEffect(() => {
