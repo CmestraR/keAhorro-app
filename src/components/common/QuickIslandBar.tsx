@@ -1,14 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
   Modal,
+  ScrollView,
+  Switch,
+  Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import { parseBankNotification, ParsedBankMessage } from '../../utils/bankNotificationParser';
+import {
+  AutoImportedNotificationLog,
+  getAutoImportedHistory,
+  processAndAutoSaveBankNotification,
+  removeAutoImportedHistoryEntry,
+} from '../../utils/autoNotificationImporter';
 import { useFinancial } from '../../context/FinancialContext';
 import { useAlert } from '../../context/AlertContext';
 import { useAppTheme } from '../../context/ThemeContext';
 import { formatCurrency } from '../../utils/formatters';
+import { alpha } from './Theme';
 import { CustomIcon } from './CustomIcon';
 import { Text, TextInput } from './AppText';
 import { TouchableOpacity } from './Touchable';
@@ -19,13 +30,75 @@ interface QuickIslandBarProps {
   variant?: 'pill' | 'icon';
 }
 
-export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, variant = 'pill' }) => {
-  const { currency } = useFinancial();
-  const { showWarning } = useAlert();
+const REAL_BANK_SIMULATIONS = [
+  {
+    label: 'Bancolombia • Compra Débito',
+    badge: 'Gasto',
+    color: '#F59E0B',
+    text: 'Bancolombia: Compraste $45.900,00 en D1 SAS con tu T.Deb *4829, el 19/11/2026 a las 14:32.',
+  },
+  {
+    label: 'Bancolombia • Te Transfieren / Pagan',
+    badge: 'Ingreso',
+    color: '#10B981',
+    text: 'Bancolombia: Recibiste una transferencia por $250.000,00 de ANDRES PEREZ en tu cuenta *1234, el 19/11/2026 a las 10:15.',
+  },
+  {
+    label: 'RappiCard • Tarjeta de Crédito',
+    badge: 'T. Crédito',
+    color: '#6366F1',
+    text: 'RappiCard: Compra aprobada por $64.900 en CREPES Y WAFFLES con tu tarjeta de crédito RappiCard *9012 el 19/11/2026.',
+  },
+  {
+    label: 'Nequi • Envío de Plata',
+    badge: 'Gasto',
+    color: '#EC4899',
+    text: 'Nequi: Enviaste $35.000 a Carlos Mario el 19/11/2026 a las 16:40.',
+  },
+  {
+    label: 'Nu Colombia • Compra Tarjeta',
+    badge: 'T. Crédito',
+    color: '#8B5CF6',
+    text: 'Nu: Compra aprobada por $78.900,00 en NETFLIX.COM con tu tarjeta *4411 a 1 cuota.',
+  },
+];
+
+export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({
+  onOpenAddModal,
+  variant = 'pill',
+}) => {
+  const {
+    accounts,
+    creditCards,
+    categories,
+    currency,
+    addTransaction,
+    deleteTransaction,
+    addCardPurchase,
+    deleteCardPurchase,
+    addAccount,
+    addCreditCard,
+  } = useFinancial();
+  const { showSuccess, showWarning, showError } = useAlert();
   const { colors } = useAppTheme();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [notificationText, setNotificationText] = useState('');
   const [parsedPreview, setParsedPreview] = useState<ParsedBankMessage | null>(null);
+  const [autoSaveMode, setAutoSaveMode] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [historyLogs, setHistoryLogs] = useState<AutoImportedNotificationLog[]>([]);
+
+  const loadHistory = useCallback(async () => {
+    const list = await getAutoImportedHistory();
+    setHistoryLogs(list);
+  }, []);
+
+  useEffect(() => {
+    if (isModalOpen) {
+      loadHistory();
+    }
+  }, [isModalOpen, loadHistory]);
 
   const handleTextChange = (text: string) => {
     setNotificationText(text);
@@ -37,9 +110,72 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
     }
   };
 
-  const handleApplyParsed = () => {
+  const handleAutoProcessAndNotify = async (textToProcess?: string) => {
+    const raw = (textToProcess ?? notificationText).trim();
+    if (!raw) {
+      showWarning(
+        'Mensaje vacío',
+        'Pega o selecciona una notificación bancaria de Bancolombia, RappiCard, Nequi o Nu.'
+      );
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const result = await processAndAutoSaveBankNotification({
+        rawText: raw,
+        accounts,
+        creditCards,
+        categories,
+        currency,
+        addTransaction,
+        addCardPurchase,
+        addAccount,
+        addCreditCard,
+        sendPushConfirmation: true,
+        skipDuplicateCheck: true,
+      });
+
+      if (!result.ok) {
+        showWarning('No se pudo registrar', result.message);
+        return;
+      }
+
+      await loadHistory();
+      setNotificationText('');
+      setParsedPreview(null);
+      showSuccess(
+        '🔔 ¡Agregado y Notificado!',
+        `${result.message}. Revisa también la notificación en la barra superior de tu teléfono.`
+      );
+    } catch {
+      showError('Error', 'Ocurrió un problema al guardar el movimiento automático.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleUndoLogEntry = async (entry: AutoImportedNotificationLog) => {
+    try {
+      if (entry.recordKind === 'purchase') {
+        await deleteCardPurchase(entry.recordId);
+      } else {
+        await deleteTransaction(entry.recordId);
+      }
+      await removeAutoImportedHistoryEntry(entry.id);
+      await loadHistory();
+      showSuccess('Deshecho', `Se revirtió: ${entry.description}`);
+    } catch {
+      showError('Error', 'No se pudo revertir el movimiento.');
+    }
+  };
+
+  const handleOpenManualForm = () => {
     if (!parsedPreview) {
-      showWarning('No se detectó información', 'Pega el texto completo del SMS o notificación bancaria.');
+      showWarning(
+        'No se detectó información',
+        'Pega el texto completo del SMS o notificación bancaria.'
+      );
       return;
     }
     setIsModalOpen(false);
@@ -48,16 +184,9 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
     setParsedPreview(null);
   };
 
-  const sampleNotifications = [
-    'Bancolombia le informa compra por $45.000 en EXITO con t.deb *4829',
-    'Nu: Compra aprobada por $120.000 en MercadoLibre a 1 cuota',
-    'Nequi: Enviaste $50.000 a Juan Perez',
-  ];
-
   return (
     <>
       {variant === 'icon' ? (
-        /* Acceso sutil de ícono con badge (header) */
         <TouchableOpacity
           style={[
             styles.iconTrigger,
@@ -65,7 +194,7 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
           ]}
           activeOpacity={0.8}
           onPress={() => setIsModalOpen(true)}
-          accessibilityLabel="Notificaciones activas - captura rápida"
+          accessibilityLabel="Lector automático de notificaciones bancarias"
         >
           <CustomIcon name="Sparkles" size={20} color={colors.primaryLight} />
           <View
@@ -76,7 +205,6 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
           />
         </TouchableOpacity>
       ) : (
-        /* Píldora de Acceso Rápido / Isla Dinámica */
         <TouchableOpacity
           style={styles.islandPill}
           activeOpacity={0.85}
@@ -85,7 +213,7 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
           <View style={styles.islandPulseDot} />
           <View style={styles.islandContent}>
             <CustomIcon name="Sparkles" size={14} color="#818CF8" />
-            <Text style={styles.islandText}>Captura Rápida de Notificaciones</Text>
+            <Text style={styles.islandText}>Lectura Automática de Notificaciones</Text>
           </View>
           <View style={styles.islandBadge}>
             <Text style={styles.islandBadgeText}>Auto</Text>
@@ -93,31 +221,37 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
         </TouchableOpacity>
       )}
 
-      {/* Modal de Captura Inteligente */}
-      <Modal visible={isModalOpen} animationType="fade" transparent onRequestClose={() => setIsModalOpen(false)}>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsModalOpen(false)}
-        >
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
+      <Modal
+        visible={isModalOpen}
+        animationType="slide"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setIsModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setIsModalOpen(false)}
+          />
+
+          <View
             style={[
               styles.modalContent,
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { borderBottomColor: colors.divider }]}>
               <View style={styles.headerTitleRow}>
-                <View style={[styles.sparkleBox, { backgroundColor: colors.warningBg }]}>
-                  <CustomIcon name="Zap" size={16} color={colors.warning} />
+                <View style={[styles.sparkleBox, { backgroundColor: alpha(colors.success, 0.16) }]}>
+                  <CustomIcon name="BellRing" size={18} color={colors.success} />
                 </View>
-                <View>
-                  <Text style={[styles.tag, { color: colors.warning }]}>DETECCIÓN INTELIGENTE</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.tag, { color: colors.success }]}>
+                    BANCOLOMBIA • RAPPICARD • NEQUI • NU
+                  </Text>
                   <Text style={[styles.title, { color: colors.textPrimary }]}>
-                    Leer Notificación Bancaria
+                    Lector Automático de Notificaciones
                   </Text>
                 </View>
               </View>
@@ -129,125 +263,291 @@ export const QuickIslandBar: React.FC<QuickIslandBarProps> = ({ onOpenAddModal, 
               </TouchableOpacity>
             </View>
 
-            <Text style={[styles.instruction, { color: colors.textSecondary }]}>
-              Pega aquí el texto de una notificación o SMS de Bancolombia, Nu, Nequi, Daviplata o cualquier banco:
-            </Text>
-
-            {/* Input para pegar texto */}
-            <TextInput
-              style={[
-                styles.textArea,
-                {
-                  backgroundColor: colors.surfaceElevated,
-                  color: colors.textPrimary,
-                  borderColor: colors.borderLight,
-                },
-              ]}
-              placeholder="Pega aquí: ej. 'Bancolombia le informa compra por $85.000 en...' o 'Transferencia a Nu...'"
-              placeholderTextColor={colors.textMuted}
-              multiline
-              numberOfLines={4}
-              value={notificationText}
-              onChangeText={handleTextChange}
-            />
-
-            {/* Ejemplos rápidos */}
-            <Text style={[styles.sampleLabel, { color: colors.textMuted }]}>
-              O prueba con un ejemplo:
-            </Text>
-            <View style={styles.samplesRow}>
-              {sampleNotifications.map((sample, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={[
-                    styles.sampleChip,
-                    { backgroundColor: colors.surfaceCard, borderColor: colors.border },
-                  ]}
-                  onPress={() => handleTextChange(sample)}
-                >
-                  <Text style={[styles.sampleChipText, { color: colors.primaryLight }]} numberOfLines={1}>
-                    {sample.substring(0, 24)}...
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Vista Previa de Detección */}
-            {parsedPreview ? (
+            <ScrollView
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+              overScrollMode="never"
+              bounces={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.scrollBody}
+            >
+              {/* Switch de Guardado Automático + Notificación Push */}
               <View
                 style={[
-                  styles.previewCard,
-                  { backgroundColor: colors.inset, borderColor: colors.success },
+                  styles.autoSwitchCard,
+                  {
+                    backgroundColor: colors.surfaceCard,
+                    borderColor: autoSaveMode ? colors.success : colors.border,
+                  },
                 ]}
               >
-                <View style={styles.previewHeader}>
-                  <CustomIcon name="CheckCircle" size={14} color={colors.success} />
-                  <Text style={[styles.previewTitle, { color: colors.success }]}>
-                    Datos Detectados con Éxito
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={[styles.autoSwitchTitle, { color: colors.textPrimary }]}>
+                    Agregar movimiento automáticamente y notificar
+                  </Text>
+                  <Text style={[styles.autoSwitchSub, { color: colors.textSecondary }]}>
+                    Detecta monto, comercio/remitente, fecha y tarjeta/cuenta, lo guarda al instante y lanza una notificación push.
                   </Text>
                 </View>
-                <View style={styles.previewRow}>
-                  <Text style={[styles.previewLabel, { color: colors.textMuted }]}>
-                    Banco / Origen:
-                  </Text>
-                  <Text style={[styles.previewVal, { color: colors.textPrimary }]}>
-                    {parsedPreview.bankName}
-                  </Text>
-                </View>
-                <View style={styles.previewRow}>
-                  <Text style={[styles.previewLabel, { color: colors.textMuted }]}>
-                    Monto Extraído:
-                  </Text>
-                  <Text style={[styles.previewVal, { color: colors.successLight, fontWeight: 'bold' }]}>
-                    {formatCurrency(parsedPreview.amount, currency)}
-                  </Text>
-                </View>
-                <View style={styles.previewRow}>
-                  <Text style={[styles.previewLabel, { color: colors.textMuted }]}>Concepto:</Text>
-                  <Text style={[styles.previewVal, { color: colors.textPrimary }]}>
-                    {parsedPreview.description}
-                  </Text>
-                </View>
-                <View style={styles.previewRow}>
-                  <Text style={[styles.previewLabel, { color: colors.textMuted }]}>
-                    Tipo de Movimiento:
-                  </Text>
-                  <Text
-                    style={[
-                      styles.previewVal,
-                      { color: colors.textPrimary, textTransform: 'capitalize' },
-                    ]}
-                  >
-                    {parsedPreview.type === 'card_purchase' ? 'Compra Tarjeta' : parsedPreview.type}
-                  </Text>
-                </View>
+                <Switch
+                  value={autoSaveMode}
+                  onValueChange={setAutoSaveMode}
+                  trackColor={{ false: '#334155', true: '#10B981' }}
+                  thumbColor="#FFFFFF"
+                />
               </View>
-            ) : (
-              notificationText.length > 5 && (
-                <View style={[styles.warningBox, { backgroundColor: colors.warningBg }]}>
-                  <CustomIcon name="AlertCircle" size={14} color={colors.warning} />
-                  <Text style={[styles.warningText, { color: colors.warningLight }]}>
-                    No se detectó un valor claro. Asegúrate de incluir el símbolo $ y el monto.
-                  </Text>
-                </View>
-              )
-            )}
 
-            {/* Botón de Aplicar */}
-            <TouchableOpacity
-              style={[
-                styles.applyBtn,
-                { backgroundColor: colors.primary },
-                !parsedPreview && styles.applyBtnDisabled,
-              ]}
-              disabled={!parsedPreview}
-              onPress={handleApplyParsed}
-            >
-              <CustomIcon name="ArrowRight" size={16} color="#FFFFFF" />
-              <Text style={styles.applyBtnText}>Cargar Gasto al Formulario</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
+              {/* Simulador de llegada de notificaciones reales en 1 toque */}
+              <Text style={[styles.sectionLabel, { color: colors.textPrimary }]}>
+                ⚡ Simular llegada de notificación real (1 toque):
+              </Text>
+              <Text style={[styles.sectionHint, { color: colors.textSecondary }]}>
+                Toca cualquiera de estas notificaciones reales para ver cómo keAhorro extrae los datos, agrega el movimiento y te envía la notificación al teléfono:
+              </Text>
+
+              <View style={styles.simList}>
+                {REAL_BANK_SIMULATIONS.map((sim, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[
+                      styles.simCard,
+                      {
+                        backgroundColor: colors.surfaceCard,
+                        borderColor: colors.borderLight,
+                      },
+                    ]}
+                    onPress={() => {
+                      handleTextChange(sim.text);
+                      if (autoSaveMode) {
+                        handleAutoProcessAndNotify(sim.text);
+                      }
+                    }}
+                    disabled={isSaving}
+                  >
+                    <View style={styles.simCardHeader}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                        <View style={[styles.simDot, { backgroundColor: sim.color }]} />
+                        <Text
+                          style={[styles.simCardTitle, { color: colors.textPrimary }]}
+                          numberOfLines={1}
+                        >
+                          {sim.label}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.simTypeBadge,
+                          { backgroundColor: alpha(sim.color, 0.18) },
+                        ]}
+                      >
+                        <Text style={[styles.simTypeBadgeText, { color: sim.color }]}>
+                          {sim.badge}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text
+                      style={[styles.simCardBody, { color: colors.textSecondary }]}
+                      numberOfLines={2}
+                    >
+                      “{sim.text}”
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Caja para pegar cualquier SMS o notificación real */}
+              <Text style={[styles.sectionLabel, { color: colors.textPrimary, marginTop: 6 }]}>
+                📋 O pega aquí cualquier SMS / Notificación bancaria:
+              </Text>
+              <TextInput
+                style={[
+                  styles.textArea,
+                  {
+                    backgroundColor: colors.surfaceElevated,
+                    color: colors.textPrimary,
+                    borderColor: colors.borderLight,
+                  },
+                ]}
+                placeholder="Ej: Bancolombia: Compraste $45.900,00 en D1 SAS con tu T.Deb *4829, el 19/11/2026..."
+                placeholderTextColor={colors.textMuted}
+                multiline
+                numberOfLines={3}
+                value={notificationText}
+                onChangeText={handleTextChange}
+              />
+
+              {/* Vista Previa de Detección */}
+              {parsedPreview && (
+                <View
+                  style={[
+                    styles.previewCard,
+                    { backgroundColor: colors.inset, borderColor: colors.success },
+                  ]}
+                >
+                  <View style={styles.previewHeader}>
+                    <CustomIcon name="CheckCircle2" size={16} color={colors.success} />
+                    <Text style={[styles.previewTitle, { color: colors.success }]}>
+                      Lectura Inteligente Lista
+                    </Text>
+                  </View>
+                  <View style={styles.previewRow}>
+                    <Text style={[styles.previewLabel, { color: colors.textMuted }]}>
+                      Entidad:
+                    </Text>
+                    <Text style={[styles.previewVal, { color: colors.textPrimary }]}>
+                      {parsedPreview.bankName}{' '}
+                      {parsedPreview.lastFourDigits ? `(*${parsedPreview.lastFourDigits})` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.previewRow}>
+                    <Text style={[styles.previewLabel, { color: colors.textMuted }]}>
+                      Monto:
+                    </Text>
+                    <Text
+                      style={[
+                        styles.previewVal,
+                        { color: colors.successLight, fontWeight: 'bold' },
+                      ]}
+                    >
+                      {formatCurrency(parsedPreview.amount, currency)}
+                    </Text>
+                  </View>
+                  <View style={styles.previewRow}>
+                    <Text style={[styles.previewLabel, { color: colors.textMuted }]}>
+                      Lugar / Concepto:
+                    </Text>
+                    <Text
+                      style={[styles.previewVal, { color: colors.textPrimary }]}
+                      numberOfLines={1}
+                    >
+                      {parsedPreview.description}
+                    </Text>
+                  </View>
+                  <View style={styles.previewRow}>
+                    <Text style={[styles.previewLabel, { color: colors.textMuted }]}>
+                      Fecha y Tipo:
+                    </Text>
+                    <Text style={[styles.previewVal, { color: colors.textPrimary }]}>
+                      {parsedPreview.date} •{' '}
+                      {parsedPreview.type === 'card_purchase'
+                        ? 'Tarjeta de Crédito'
+                        : parsedPreview.type === 'income'
+                        ? 'Ingreso / Abono'
+                        : 'Gasto / Débito'}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Botones de Acción */}
+              <View style={styles.actionsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.primaryAutoBtn,
+                    { backgroundColor: colors.success },
+                    (!parsedPreview || isSaving) && styles.btnDisabled,
+                  ]}
+                  disabled={!parsedPreview || isSaving}
+                  onPress={() => handleAutoProcessAndNotify()}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <CustomIcon name="Zap" size={17} color="#FFFFFF" />
+                  )}
+                  <Text style={styles.primaryAutoBtnText}>
+                    Agregar Automáticamente y Notificar
+                  </Text>
+                </TouchableOpacity>
+
+                {parsedPreview && (
+                  <TouchableOpacity
+                    style={[
+                      styles.secondaryFormBtn,
+                      {
+                        backgroundColor: colors.surfaceElevated,
+                        borderColor: colors.borderLight,
+                      },
+                    ]}
+                    onPress={handleOpenManualForm}
+                  >
+                    <CustomIcon name="Edit3" size={15} color={colors.textPrimary} />
+                    <Text style={[styles.secondaryFormBtnText, { color: colors.textPrimary }]}>
+                      Revisar en Formulario
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Historial de Movimientos Agregados Automáticamente */}
+              {historyLogs.length > 0 && (
+                <View style={styles.historySection}>
+                  <Text style={[styles.sectionLabel, { color: colors.textPrimary }]}>
+                    ✅ Últimos movimientos agregados por notificación:
+                  </Text>
+                  {historyLogs.slice(0, 6).map((item) => (
+                    <View
+                      key={item.id}
+                      style={[
+                        styles.historyItem,
+                        {
+                          backgroundColor: colors.surfaceCard,
+                          borderColor: colors.border,
+                        },
+                      ]}
+                    >
+                      <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text
+                            style={[styles.historyItemTitle, { color: colors.textPrimary }]}
+                            numberOfLines={1}
+                          >
+                            {item.description}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[styles.historyItemSub, { color: colors.textSecondary }]}
+                          numberOfLines={1}
+                        >
+                          {item.targetName} • {item.date}
+                        </Text>
+                      </View>
+
+                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                        <Text
+                          style={[
+                            styles.historyItemAmount,
+                            {
+                              color:
+                                item.type === 'income' ? colors.success : colors.textPrimary,
+                            },
+                          ]}
+                        >
+                          {item.type === 'income' ? '+' : '-'}
+                          {formatCurrency(item.amount, currency)}
+                        </Text>
+                        <TouchableOpacity
+                          style={[
+                            styles.undoSmallBtn,
+                            { backgroundColor: colors.surfaceElevated },
+                          ]}
+                          onPress={() => handleUndoLogEntry(item)}
+                        >
+                          <CustomIcon name="RotateCcw" size={11} color={colors.textSecondary} />
+                          <Text
+                            style={[styles.undoSmallBtnText, { color: colors.textSecondary }]}
+                          >
+                            Deshacer
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </>
   );
@@ -283,10 +583,6 @@ const styles = StyleSheet.create({
     borderColor: '#4338CA',
     gap: 8,
     elevation: 4,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
   },
   islandPulseDot: {
     width: 8,
@@ -318,90 +614,142 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.78)',
-    justifyContent: 'center',
-    padding: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.82)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    borderRadius: 20,
-    padding: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
+    maxHeight: '90%',
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
   },
   headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+    marginRight: 8,
   },
   sparkleBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 11,
     justifyContent: 'center',
     alignItems: 'center',
   },
   tag: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    letterSpacing: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
   title: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   closeBtn: {
-    padding: 6,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  instruction: {
+  scrollBody: {
+    padding: 18,
+    paddingBottom: 34,
+    gap: 12,
+  },
+  autoSwitchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 13,
+    borderRadius: 14,
+    borderWidth: 1.5,
+  },
+  autoSwitchTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  autoSwitchSub: {
     fontSize: 13,
-    marginBottom: 10,
+    marginTop: 2,
+    lineHeight: 18,
+  },
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  sectionHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: -4,
+  },
+  simList: {
+    gap: 8,
+  },
+  simCard: {
+    padding: 12,
+    borderRadius: 13,
+    borderWidth: 1,
+    gap: 4,
+  },
+  simCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  simDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  simCardTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  simTypeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  simTypeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  simCardBody: {
+    fontSize: 13,
+    fontStyle: 'italic',
     lineHeight: 18,
   },
   textArea: {
     borderRadius: 12,
     padding: 12,
     fontSize: 14,
-    minHeight: 80,
+    minHeight: 72,
     textAlignVertical: 'top',
     borderWidth: 1,
-    marginBottom: 10,
-  },
-  sampleLabel: {
-    fontSize: 13,
-    marginBottom: 6,
-  },
-  samplesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 14,
-  },
-  sampleChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  sampleChipText: {
-    fontSize: 13,
   },
   previewCard: {
-    borderRadius: 12,
+    borderRadius: 13,
     padding: 12,
-    marginBottom: 14,
-    borderWidth: 1,
+    borderWidth: 1.5,
+    gap: 4,
   },
   previewHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   previewTitle: {
     fontSize: 13,
@@ -410,40 +758,84 @@ const styles = StyleSheet.create({
   previewRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 3,
+    gap: 10,
   },
   previewLabel: {
     fontSize: 13,
   },
   previewVal: {
     fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
+    textAlign: 'right',
   },
-  warningBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 14,
-    gap: 6,
+  actionsRow: {
+    gap: 8,
   },
-  warningText: {
-    fontSize: 13,
-    flex: 1,
-  },
-  applyBtn: {
+  primaryAutoBtn: {
+    minHeight: 48,
+    borderRadius: 13,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 6,
+    gap: 8,
+    paddingHorizontal: 14,
   },
-  applyBtnDisabled: {
-    opacity: 0.4,
-  },
-  applyBtnText: {
+  primaryAutoBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  secondaryFormBtn: {
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  secondaryFormBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  btnDisabled: {
+    opacity: 0.45,
+  },
+  historySection: {
+    marginTop: 8,
+    gap: 8,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  historyItemTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  historyItemSub: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  historyItemAmount: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  undoSmallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  undoSmallBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

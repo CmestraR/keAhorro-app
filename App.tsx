@@ -12,6 +12,8 @@ import { AlertProvider, useAlert } from './src/context/AlertContext';
 import { ThemeProvider, useAppTheme } from './src/context/ThemeContext';
 import { AIProvider, useAI } from './src/context/AIContext';
 import { NotificationService } from './src/utils/notificationService';
+import * as Notifications from 'expo-notifications';
+import { processAndAutoSaveBankNotification } from './src/utils/autoNotificationImporter';
 import { UpdateService } from './src/utils/updateService';
 import { loadAppFonts } from './src/utils/fonts';
 import { GeminiExtractedTransaction } from './src/utils/geminiService';
@@ -29,7 +31,17 @@ import { TouchableOpacity } from './src/components/common/Touchable';
 import { FadeSlideIn } from './src/components/common/FadeSlideIn';
 
 function MainApp() {
-  const { isLoading, creditCards } = useFinancial();
+  const {
+    isLoading,
+    accounts,
+    creditCards,
+    categories,
+    currency,
+    addTransaction,
+    addCardPurchase,
+    addAccount,
+    addCreditCard,
+  } = useFinancial();
   const { showConfirm, showSuccess } = useAlert();
   const { colors, isDark } = useAppTheme();
   const { voiceHoldEnabled } = useAI();
@@ -48,6 +60,60 @@ function MainApp() {
       NotificationService.scheduleCardReminders(creditCards);
     }
   }, [creditCards]);
+
+  // Escucha automática de notificaciones bancarias entrantes (Bancolombia, RappiCard, Nequi, Nu, etc.)
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(async (notification) => {
+      try {
+        const content = notification.request.content;
+        const data = (content.data || {}) as Record<string, any>;
+        // Ignorar notificaciones propias de confirmación o de recordatorio de corte/pago
+        if (
+          data.isKeAhorroAutoSaved ||
+          data.type === 'cutoff_reminder' ||
+          data.type === 'payment_due_reminder'
+        ) {
+          return;
+        }
+
+        const fullText = `${content.title || ''} ${content.body || ''}`.trim();
+        if (fullText.length < 12) return;
+
+        const res = await processAndAutoSaveBankNotification({
+          rawText: fullText,
+          accounts,
+          creditCards,
+          categories,
+          currency,
+          addTransaction,
+          addCardPurchase,
+          addAccount,
+          addCreditCard,
+          sendPushConfirmation: true,
+        });
+
+        if (res.ok) {
+          showSuccess('🤖 Movimiento Automático', res.message);
+        }
+      } catch {
+        // Silencioso para notificaciones no bancarias
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [
+    accounts,
+    creditCards,
+    categories,
+    currency,
+    addTransaction,
+    addCardPurchase,
+    addAccount,
+    addCreditCard,
+    showSuccess,
+  ]);
 
   useEffect(() => {
     if (!isLoading) {
