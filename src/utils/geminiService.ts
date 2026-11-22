@@ -659,3 +659,491 @@ export function parseVoiceCommandLocally(
     resumenHumano,
   };
 }
+
+export interface GeminiExtractedStatementPurchase {
+  id: string;
+  description: string;
+  purchaseDate: string; // YYYY-MM-DD
+  originalAmount: number;
+  installmentsTotal: number;
+  installmentsPaid: number; // Cuotas ya pagadas ANTES de este extracto
+  currentInstallmentNumber: number; // Cuota facturada en este extracto (ej. 2 si dice "2 de 6")
+  monthlyQuota: number;
+  remainingPrincipal: number;
+  interestRateMonthly: number;
+  categoryId: string;
+}
+
+export interface GeminiExtractedStatement {
+  bankName: string;
+  statementDate: string; // YYYY-MM-DD
+  dueDate: string; // YYYY-MM-DD
+  cutOffDay: number;
+  paymentDueDay: number;
+  creditLimit: number;
+  availableLimit: number;
+  totalCurrentDebt: number;
+  totalStatementBalance: number;
+  minimumPayment: number;
+  interestRateMonthly: number;
+  currentInterest: number;
+  lateInterest: number;
+  handlingFee: number;
+  taxesAndFees: number;
+  previousUnitemizedPrincipal: number;
+  purchases: GeminiExtractedStatementPurchase[];
+  resumenHumano: string;
+}
+
+/**
+ * Analiza un extracto completo de tarjeta de crédito (texto pegado del PDF/App, dictado de voz o documento/imagen base64)
+ * usando Gemini y devuelve todos los movimientos a cuotas, cargos y saldos exactos para dejar la tarjeta igual al banco.
+ */
+export async function analyzeCardStatementWithGemini(params: {
+  statementText?: string;
+  audioBase64?: string;
+  audioMimeType?: string;
+  fileBase64?: string;
+  fileMimeType?: string;
+  card: CreditCard;
+  categories: Category[];
+  apiKey: string;
+  model: GeminiModelType;
+}): Promise<{ data: GeminiExtractedStatement; source: 'gemini' | 'local_fallback' }> {
+  const {
+    statementText = '',
+    audioBase64,
+    audioMimeType,
+    fileBase64,
+    fileMimeType,
+    card,
+    categories,
+    apiKey,
+    model,
+  } = params;
+
+  const todayISO = getTodayISO();
+  const expenseCategories = categories
+    .filter((c) => c.type === 'expense')
+    .map((c) => ({ id: c.id, nombre: c.name, palabrasClave: c.keywords }));
+
+  const trimmedKey = apiKey.trim();
+
+  if (trimmedKey && (statementText.trim().length > 5 || audioBase64 || fileBase64)) {
+    try {
+      const systemPrompt = `Eres el auditor contable experto en tarjetas de crédito colombianas (Bancolombia, Nu Colombia, RappiCard, Davivienda, BBVA, Scotiabank Colpatria, Falabella, Lulo Bank) de la app keAhorro.
+Analiza el extracto o resumen de tarjeta de crédito proporcionado por el usuario y devuelve ÚNICAMENTE un objeto JSON válido con este esquema exacto:
+{
+  "bankName": string,
+  "statementDate": "YYYY-MM-DD",
+  "dueDate": "YYYY-MM-DD",
+  "cutOffDay": number,
+  "paymentDueDay": number,
+  "creditLimit": number,
+  "availableLimit": number,
+  "totalCurrentDebt": number,
+  "totalStatementBalance": number,
+  "minimumPayment": number,
+  "interestRateMonthly": number,
+  "currentInterest": number,
+  "lateInterest": number,
+  "handlingFee": number,
+  "taxesAndFees": number,
+  "previousUnitemizedPrincipal": number,
+  "purchases": [
+    {
+      "description": string,
+      "purchaseDate": "YYYY-MM-DD",
+      "originalAmount": number,
+      "installmentsTotal": number,
+      "installmentsPaid": number,
+      "currentInstallmentNumber": number,
+      "monthlyQuota": number,
+      "remainingPrincipal": number,
+      "interestRateMonthly": number,
+      "categoryId": string
+    }
+  ],
+  "resumenHumano": string
+}
+
+CONTEXTO DE LA TARJETA ACTUAL EN LA APP:
+- Nombre: "${card.name}" (${card.bankName})
+- Cupo Total actual en app: ${card.creditLimit}
+- Día de corte actual: ${card.cutOffDay}, Día límite de pago: ${card.paymentDueDay}
+- Tasa mensual actual (% E.M.): ${card.interestRateMonthly}
+- Fecha actual: "${todayISO}"
+- Categorías de gasto disponibles: ${JSON.stringify(expenseCategories)}
+
+REGLAS CONTABLES ESTRICTAS PARA DEJAR LA TARJETA IDÉNTICA AL BANCO:
+1. Todos los valores monetarios deben ser enteros en pesos colombianos (COP) sin decimales (ej. "$1.250.000,00" -> 1250000).
+2. En cada compra ("purchases"):
+   - Si el extracto dice "Cuota 2 de 6" o "2/6" (es decir, en este extracto se está cobrando la cuota 2 de un total de 6):
+     * "installmentsTotal": 6
+     * "currentInstallmentNumber": 2
+     * "installmentsPaid": 1 (porque la cuota 1 ya se pagó en el extracto anterior, y las cuotas 2, 3, 4, 5 y 6 siguen pendientes de pago).
+   - Si es una compra del mes a 1 sola cuota ("1 de 1" o "1/1"):
+     * "installmentsTotal": 1
+     * "currentInstallmentNumber": 1
+     * "installmentsPaid": 0 (porque está facturada en este extracto y aún no se ha pagado).
+   - Si el extracto muestra "Valor original" y "Saldo pendiente", respétalos. Si solo muestra la cuota mensual y las cuotas pendientes, calcula "remainingPrincipal" = monthlyQuota * (installmentsTotal - installmentsPaid) y "originalAmount" = monthlyQuota * installmentsTotal.
+   - Si una compra es a 1 cuota o tiene promoción 0% interés, pon "interestRateMonthly": 0. Si tiene intereses, usa la tasa mensual del extracto (ej. 2.15).
+3. Cuadre exacto de saldos con la app bancaria:
+   - "totalStatementBalance": Pago total del mes / Saldo facturado a pagar en la fecha límite actual.
+   - "minimumPayment": Pago mínimo exigido en este corte.
+   - "totalCurrentDebt": Deuda total actual en la tarjeta (capital total utilizado + intereses/cargos pendientes). Si no se menciona explícitamente pero están las compras y cargos, súmalos: suma de "remainingPrincipal" de todas las compras + currentInterest + lateInterest + handlingFee + taxesAndFees.
+   - "creditLimit": Cupo total de la tarjeta (si no se menciona en el extracto, usa ${card.creditLimit}).
+   - "availableLimit": Cupo disponible exacto que muestra el banco. Si no se menciona explícitamente, calcúlalo como: creditLimit - (capital total utilizado).
+   - "previousUnitemizedPrincipal": Si la deuda de capital total reportada por el banco es mayor que la suma de "remainingPrincipal" de las compras listadas, pon aquí la diferencia exacta para que la deuda total cuadre al 100% con el banco. Si cuadra, pon 0.
+4. "resumenHumano": Resumen claro en español indicando cuántas compras se detectaron, el saldo facturado del mes y la deuda total sincronizada.`;
+
+      const userParts: any[] = [];
+      if (audioBase64) {
+        userParts.push({
+          text: `${systemPrompt}\n\nEscucha la descripción del extracto de tarjeta de crédito dictada por el usuario y extrae el JSON completo:`,
+        });
+        userParts.push({
+          inlineData: {
+            mimeType: audioMimeType || 'audio/mp4',
+            data: audioBase64,
+          },
+        });
+      } else if (fileBase64) {
+        userParts.push({
+          text: `${systemPrompt}\n\nAnaliza este documento/imagen del extracto de tarjeta de crédito y extrae todos los movimientos y saldos en el JSON:`,
+        });
+        userParts.push({
+          inlineData: {
+            mimeType: fileMimeType || 'application/pdf',
+            data: fileBase64,
+          },
+        });
+      } else {
+        userParts.push({
+          text: `${systemPrompt}\n\nTEXTO DEL EXTRACTO BANCARIO:\n"""\n${statementText.trim()}\n"""`,
+        });
+      }
+
+      const res = await callGeminiWithAutoFallback(trimmedKey, model, {
+        contents: [
+          {
+            role: 'user',
+            parts: userParts,
+          },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
+      });
+
+      if (res.ok && res.resultJson) {
+        const rawText = res.resultJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText) {
+          const parsed = JSON.parse(rawText);
+          return {
+            data: normalizeExtractedStatement(parsed, card, categories),
+            source: 'gemini',
+          };
+        }
+      }
+    } catch {
+      // Fallback a analizador local de extractos
+    }
+  }
+
+  return {
+    data: parseStatementTextLocally(statementText, card, categories),
+    source: 'local_fallback',
+  };
+}
+
+function normalizeExtractedStatement(
+  raw: any,
+  card: CreditCard,
+  categories: Category[]
+): GeminiExtractedStatement {
+  const todayISO = getTodayISO();
+  const defaultCatId =
+    categories.find((c) => c.type === 'expense')?.id || categories[0]?.id || 'cat-food';
+
+  const cutOffDay = Math.max(
+    1,
+    Math.min(31, Math.round(Number(raw?.cutOffDay) || card.cutOffDay || 15))
+  );
+  const paymentDueDay = Math.max(
+    1,
+    Math.min(31, Math.round(Number(raw?.paymentDueDay) || card.paymentDueDay || 5))
+  );
+
+  const statementDate =
+    typeof raw?.statementDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.statementDate)
+      ? raw.statementDate
+      : todayISO;
+
+  const dueDate =
+    typeof raw?.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.dueDate)
+      ? raw.dueDate
+      : todayISO;
+
+  const cardRate = Number(raw?.interestRateMonthly) >= 0
+    ? Number(raw.interestRateMonthly)
+    : card.interestRateMonthly || 2.15;
+
+  const currentInterest = Math.max(0, Math.round(Number(raw?.currentInterest) || 0));
+  const lateInterest = Math.max(0, Math.round(Number(raw?.lateInterest) || 0));
+  const handlingFee = Math.max(0, Math.round(Number(raw?.handlingFee) || 0));
+  const taxesAndFees = Math.max(0, Math.round(Number(raw?.taxesAndFees) || 0));
+  const nonPrincipalTotal = currentInterest + lateInterest + handlingFee + taxesAndFees;
+
+  const rawPurchases = Array.isArray(raw?.purchases) ? raw.purchases : [];
+  const purchases: GeminiExtractedStatementPurchase[] = rawPurchases
+    .map((p: any, idx: number) => {
+      const installmentsTotal = Math.max(1, Math.min(60, Math.round(Number(p?.installmentsTotal) || 1)));
+      let installmentsPaid = Math.round(Number(p?.installmentsPaid) || 0);
+      const currentInst = Math.round(Number(p?.currentInstallmentNumber) || 1);
+
+      if (installmentsPaid === 0 && currentInst > 1) {
+        installmentsPaid = currentInst - 1;
+      }
+      installmentsPaid = Math.max(0, Math.min(installmentsTotal - 1, installmentsPaid));
+
+      const remainingQuotas = Math.max(1, installmentsTotal - installmentsPaid);
+      let originalAmount = Math.max(0, Math.round(Number(p?.originalAmount) || 0));
+      let remainingPrincipal = Math.max(0, Math.round(Number(p?.remainingPrincipal) || 0));
+      let monthlyQuota = Math.max(0, Math.round(Number(p?.monthlyQuota) || 0));
+
+      if (originalAmount <= 0 && remainingPrincipal > 0) {
+        originalAmount = Math.round((remainingPrincipal / remainingQuotas) * installmentsTotal);
+      } else if (originalAmount <= 0 && monthlyQuota > 0) {
+        originalAmount = monthlyQuota * installmentsTotal;
+      }
+
+      if (remainingPrincipal <= 0 && originalAmount > 0) {
+        remainingPrincipal = Math.round((originalAmount / installmentsTotal) * remainingQuotas);
+      }
+
+      if (monthlyQuota <= 0 && remainingPrincipal > 0) {
+        monthlyQuota = Math.round(remainingPrincipal / remainingQuotas);
+      }
+
+      const pRate =
+        installmentsTotal === 1
+          ? 0
+          : typeof p?.interestRateMonthly === 'number' && p.interestRateMonthly >= 0
+          ? p.interestRateMonthly
+          : cardRate;
+
+      const validCat = categories.find((c) => c.id === p?.categoryId)?.id || defaultCatId;
+      const purchaseDate =
+        typeof p?.purchaseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.purchaseDate)
+          ? p.purchaseDate
+          : statementDate;
+
+      return {
+        id: `ext-p-${Date.now()}-${idx}`,
+        description: (p?.description || `Compra #${idx + 1}`).toString().trim(),
+        purchaseDate,
+        originalAmount,
+        installmentsTotal,
+        installmentsPaid,
+        currentInstallmentNumber: installmentsPaid + 1,
+        monthlyQuota,
+        remainingPrincipal,
+        interestRateMonthly: pRate,
+        categoryId: validCat,
+      };
+    })
+    .filter((p: GeminiExtractedStatementPurchase) => p.remainingPrincipal > 0 || p.originalAmount > 0);
+
+  const sumPurchasesRemainingPrincipal = purchases.reduce(
+    (sum, p) => sum + p.remainingPrincipal,
+    0
+  );
+  const sumMonthlyQuotas = purchases.reduce((sum, p) => sum + p.monthlyQuota, 0);
+
+  const creditLimit = Math.max(
+    card.creditLimit || 1000000,
+    Math.round(Number(raw?.creditLimit) || card.creditLimit || 5000000)
+  );
+
+  let totalCurrentDebt = Math.max(0, Math.round(Number(raw?.totalCurrentDebt) || 0));
+  if (totalCurrentDebt <= 0) {
+    totalCurrentDebt = sumPurchasesRemainingPrincipal + nonPrincipalTotal;
+  }
+
+  const targetPrincipalDebt = Math.max(
+    sumPurchasesRemainingPrincipal,
+    totalCurrentDebt - nonPrincipalTotal
+  );
+
+  const previousUnitemizedPrincipal = Math.max(
+    0,
+    Math.round(Number(raw?.previousUnitemizedPrincipal) || targetPrincipalDebt - sumPurchasesRemainingPrincipal)
+  );
+
+  const finalPrincipalDebt = sumPurchasesRemainingPrincipal + previousUnitemizedPrincipal;
+  totalCurrentDebt = finalPrincipalDebt + nonPrincipalTotal;
+
+  let availableLimit =
+    typeof raw?.availableLimit === 'number' && raw.availableLimit >= 0
+      ? Math.round(raw.availableLimit)
+      : Math.max(0, creditLimit - finalPrincipalDebt);
+
+  let totalStatementBalance = Math.max(0, Math.round(Number(raw?.totalStatementBalance) || 0));
+  if (totalStatementBalance <= 0) {
+    totalStatementBalance = Math.min(totalCurrentDebt, sumMonthlyQuotas + nonPrincipalTotal);
+  }
+
+  let minimumPayment = Math.max(0, Math.round(Number(raw?.minimumPayment) || 0));
+  if (minimumPayment <= 0 && totalStatementBalance > 0) {
+    minimumPayment = Math.min(totalStatementBalance, Math.max(50000, Math.round(totalStatementBalance * 0.15)));
+  }
+
+  const resumenHumano =
+    (raw?.resumenHumano || '').toString().trim() ||
+    `Se detectaron ${purchases.length} movimiento(s), pago del mes por $${totalStatementBalance.toLocaleString(
+      'es-CO'
+    )} y deuda total de $${totalCurrentDebt.toLocaleString('es-CO')}.`;
+
+  return {
+    bankName: (raw?.bankName || card.bankName || 'Banco').toString().trim(),
+    statementDate,
+    dueDate,
+    cutOffDay,
+    paymentDueDay,
+    creditLimit,
+    availableLimit,
+    totalCurrentDebt,
+    totalStatementBalance,
+    minimumPayment,
+    interestRateMonthly: cardRate,
+    currentInterest,
+    lateInterest,
+    handlingFee,
+    taxesAndFees,
+    previousUnitemizedPrincipal,
+    purchases,
+    resumenHumano,
+  };
+}
+
+/**
+ * Analizador local inteligente de respaldo para texto de extractos bancarios cuando no hay conexión.
+ */
+export function parseStatementTextLocally(
+  text: string,
+  card: CreditCard,
+  categories: Category[]
+): GeminiExtractedStatement {
+  const clean = text.trim();
+  const todayISO = getTodayISO();
+  const defaultCatId =
+    categories.find((c) => c.type === 'expense')?.id || categories[0]?.id || 'cat-food';
+
+  const extractNum = (regex: RegExp, fallback = 0): number => {
+    const m = clean.match(regex);
+    if (!m || !m[1]) return fallback;
+    const rawStr = m[1].replace(/[$\sCOP]/gi, '').replace(/[.,]+$/, '');
+    if (/^\d{1,3}(\.\d{3})+,\d{1,2}$/.test(rawStr)) {
+      return parseInt(rawStr.split(',')[0].replace(/\./g, ''), 10) || fallback;
+    }
+    if (/^\d{1,3}(,\d{3})+\.\d{1,2}$/.test(rawStr)) {
+      return parseInt(rawStr.split('.')[0].replace(/,/g, ''), 10) || fallback;
+    }
+    return parseInt(rawStr.replace(/[.,]/g, ''), 10) || fallback;
+  };
+
+  const creditLimit = extractNum(/cupo\s+total[:\s]*\$?\s*([\d.,]+)/i, card.creditLimit);
+  const totalCurrentDebt = extractNum(/(?:deuda\s+total|saldo\s+total\s+deuda|deuda\s+actual)[:\s]*\$?\s*([\d.,]+)/i, 0);
+  const totalStatementBalance = extractNum(/(?:pago\s+total|total\s+a\s+pagar|facturado\s+al\s+corte|saldo\s+al\s+corte)[:\s]*\$?\s*([\d.,]+)/i, 0);
+  const minimumPayment = extractNum(/pago\s+m[ií]nimo[:\s]*\$?\s*([\d.,]+)/i, 0);
+  const currentInterest = extractNum(/intereses?\s+corrientes?[:\s]*\$?\s*([\d.,]+)/i, 0);
+  const handlingFee = extractNum(/(?:cuota\s+de\s+manejo|seguro\s+deudor)[:\s]*\$?\s*([\d.,]+)/i, card.handlingFee || 0);
+
+  // Detectar líneas de compras: ej. "- MERCADOLIBRE | $600.000 | Cuota 2 de 6" o "ALKOSTO $2.400.000 3/12"
+  const lines = clean.split(/\r?\n/);
+  const purchases: GeminiExtractedStatementPurchase[] = [];
+
+  lines.forEach((line, idx) => {
+    const l = line.trim();
+    if (!l || /cupo|pago\s+total|pago\s+m[ií]nimo|deuda\s+total|intereses|cuota\s+de\s+manejo|fecha\s+de\s+corte/i.test(l)) {
+      return;
+    }
+
+    const quotaMatch =
+      l.match(/cuota\s+(\d{1,2})\s*(?:de|\/)\s*(\d{1,2})/i) ||
+      l.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\s*(?:cuotas?)?\b/i) ||
+      l.match(/\ba\s+(\d{1,2})\s+cuotas?/i);
+
+    const amountMatches = l.match(/\$?\s*(\d{1,3}(?:\.\d{3})+(?:,\d{2})?|\d{4,9})/g);
+    if (!amountMatches || amountMatches.length === 0) return;
+
+    const firstAmount = extractNum(new RegExp(amountMatches[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 0);
+    if (firstAmount <= 0) return;
+
+    let currentInst = 1;
+    let totalInst = 1;
+    if (quotaMatch) {
+      if (quotaMatch[2]) {
+        currentInst = Math.max(1, parseInt(quotaMatch[1], 10) || 1);
+        totalInst = Math.max(currentInst, parseInt(quotaMatch[2], 10) || 1);
+      } else {
+        totalInst = Math.max(1, parseInt(quotaMatch[1], 10) || 1);
+      }
+    }
+
+    const installmentsPaid = Math.max(0, currentInst - 1);
+    const remainingQuotas = Math.max(1, totalInst - installmentsPaid);
+    const originalAmount = firstAmount;
+    const monthlyQuota = Math.round(originalAmount / totalInst);
+    const remainingPrincipal = Math.round((originalAmount / totalInst) * remainingQuotas);
+
+    let desc = l
+      .replace(/\$?\s*(\d{1,3}(?:\.\d{3})+(?:,\d{2})?|\d{4,9})/g, '')
+      .replace(/cuota\s+\d+\s*(?:de|\/)\s*\d+/gi, '')
+      .replace(/\b\d{1,2}\/\d{1,2}\b/g, '')
+      .replace(/\d{4}-\d{2}-\d{2}/g, '')
+      .replace(/^[•\-*|:\s]+|[•\-*|:\s]+$/g, '')
+      .trim();
+
+    if (!desc || desc.length < 2) desc = `Compra Extracto #${idx + 1}`;
+
+    purchases.push({
+      id: `local-p-${Date.now()}-${idx}`,
+      description: desc.substring(0, 42),
+      purchaseDate: todayISO,
+      originalAmount,
+      installmentsTotal: totalInst,
+      installmentsPaid,
+      currentInstallmentNumber: currentInst,
+      monthlyQuota,
+      remainingPrincipal,
+      interestRateMonthly: totalInst === 1 ? 0 : card.interestRateMonthly || 2.15,
+      categoryId: defaultCatId,
+    });
+  });
+
+  return normalizeExtractedStatement(
+    {
+      bankName: card.bankName,
+      statementDate: todayISO,
+      dueDate: todayISO,
+      cutOffDay: card.cutOffDay,
+      paymentDueDay: card.paymentDueDay,
+      creditLimit,
+      totalCurrentDebt,
+      totalStatementBalance,
+      minimumPayment,
+      interestRateMonthly: card.interestRateMonthly,
+      currentInterest,
+      lateInterest: 0,
+      handlingFee,
+      taxesAndFees: 0,
+      purchases,
+    },
+    card,
+    categories
+  );
+}
+

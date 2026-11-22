@@ -21,6 +21,7 @@ import { TransactionRepository } from '../database/repositories/transactionRepos
 import { CategoryRepository } from '../database/repositories/categoryRepository';
 import { BudgetRepository } from '../database/repositories/budgetRepository';
 import { seedSampleData } from '../database/seedDemoData';
+import { GeminiExtractedStatement } from '../utils/geminiService';
 
 interface FinancialContextType {
   isLoading: boolean;
@@ -92,6 +93,11 @@ interface FinancialContextType {
   saveStatementSnapshot: (stmt: Omit<CardStatement, 'id' | 'createdAt'>) => Promise<CardStatement>;
   saveManualStatement: (stmt: CardStatement) => Promise<void>;
   getStatementsForCard: (cardId: string) => Promise<CardStatement[]>;
+  syncCardFromAIStatement: (
+    cardId: string,
+    extracted: GeminiExtractedStatement,
+    replaceExisting?: boolean
+  ) => Promise<void>;
   addCategory: (category: Category) => Promise<void>;
   updateCategory: (category: Category) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
@@ -349,6 +355,15 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return StatementRepository.getStatementsForCard(cardId);
   };
 
+  const syncCardFromAIStatement = async (
+    cardId: string,
+    extracted: GeminiExtractedStatement,
+    replaceExisting: boolean = true
+  ): Promise<void> => {
+    await CardRepository.syncCardFromAIStatementAtomic(cardId, extracted, replaceExisting);
+    await loadData();
+  };
+
   const addCategory = async (category: Category) => {
     await CategoryRepository.create(category);
     await loadData();
@@ -436,6 +451,7 @@ export const FinancialProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         saveStatementSnapshot,
         saveManualStatement,
         getStatementsForCard,
+        syncCardFromAIStatement,
         addCategory,
         updateCategory,
         deleteCategory,

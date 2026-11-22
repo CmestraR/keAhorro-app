@@ -22,6 +22,7 @@ import { CardStatementModal } from '../components/cards/CardStatementModal';
 import { PayCardModal } from '../components/cards/PayCardModal';
 import { ReconcileCardModal } from '../components/cards/ReconcileCardModal';
 import { ManualStatementModal } from '../components/cards/ManualStatementModal';
+import { AIStatementAnalyzerModal } from '../components/cards/AIStatementAnalyzerModal';
 import { InstallmentAmortizationModal } from '../components/cards/InstallmentAmortizationModal';
 import { AddTransactionModal } from '../components/transactions/AddTransactionModal';
 import { CreditCard, CardStatementSummary, CardPurchase } from '../types/finance';
@@ -61,6 +62,8 @@ export const CardsScreen: React.FC = () => {
 
   const [addPurchaseModalVisible, setAddPurchaseModalVisible] = useState(false);
   const [selectedCardForPurchase, setSelectedCardForPurchase] = useState<CreditCard | null>(null);
+  const [aiStatementModalVisible, setAiStatementModalVisible] = useState(false);
+  const [selectedCardForAIStatement, setSelectedCardForAIStatement] = useState<CreditCard | null>(null);
   const [contextMenuCard, setContextMenuCard] = useState<CreditCard | null>(null);
   const [viewMode, setViewMode] = useState<'wallet' | 'list'>('wallet');
 
@@ -78,11 +81,16 @@ export const CardsScreen: React.FC = () => {
   const handleCardCreated = (newCard: CreditCard) => {
     showConfirm(
       '¿Ya utilizabas esta tarjeta?',
-      'Usa esta opción si ya utilizabas esta tarjeta antes de agregarla a la app para configurar su saldo actual. Si es una tarjeta nueva sin movimientos previos, puedes empezar desde cero.',
-      () => handleOpenManualStatement(newCard, 'opening_balance'),
-      'Configurar saldo actual',
+      'Puedes analizar tu extracto actual con Inteligencia Artificial (Gemini) para crear automáticamente todas tus compras a cuotas y dejar el cupo y deuda idénticos a tu app bancaria.',
+      () => handleOpenAIStatement(newCard),
+      'Analizar Extracto con IA',
       'Empezar desde cero'
     );
+  };
+
+  const handleOpenAIStatement = (card: CreditCard) => {
+    setSelectedCardForAIStatement(card);
+    setAiStatementModalVisible(true);
   };
 
   const handleOpenEditCard = (card: CreditCard) => {
@@ -314,6 +322,7 @@ export const CardsScreen: React.FC = () => {
             onOpenAmortization={handleOpenAmortization}
             onOpenAddPurchase={(card) => handleOpenAddPurchase(card)}
             onOpenCreateCard={handleOpenCreateCard}
+            onOpenAIStatement={handleOpenAIStatement}
           />
         ) : (
           creditCards.map((card) => {
@@ -511,6 +520,15 @@ export const CardsScreen: React.FC = () => {
         }}
       />
 
+      <AIStatementAnalyzerModal
+        visible={aiStatementModalVisible}
+        card={selectedCardForAIStatement}
+        onClose={() => {
+          setAiStatementModalVisible(false);
+          setSelectedCardForAIStatement(null);
+        }}
+      />
+
       {/* Menú Contextual (⋮) en modo Lista */}
       <Modal
         visible={!!contextMenuCard}
@@ -546,6 +564,28 @@ export const CardsScreen: React.FC = () => {
                   <CustomIcon name="X" size={18} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
+
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => {
+                  const target = contextMenuCard;
+                  setContextMenuCard(null);
+                  handleOpenAIStatement(target);
+                }}
+              >
+                <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.success, 0.18) }]}>
+                  <CustomIcon name="Sparkles" size={18} color={colors.success} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
+                    Analizar Extracto con IA (Gemini)
+                  </Text>
+                  <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                    Crea todos los movimientos y deja la tarjeta igual al banco
+                  </Text>
+                </View>
+                <CustomIcon name="ChevronRight" size={16} color={colors.success} />
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.contextMenuItem}

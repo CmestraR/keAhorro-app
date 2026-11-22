@@ -248,6 +248,7 @@ interface AnimatedWalletStackProps {
   onOpenAmortization: (purchase: CardPurchase) => void;
   onOpenAddPurchase: (card: CreditCard) => void;
   onOpenCreateCard: () => void;
+  onOpenAIStatement?: (card: CreditCard) => void;
 }
 
 export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
@@ -264,6 +265,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
   onOpenAmortization,
   onOpenAddPurchase,
   onOpenCreateCard,
+  onOpenAIStatement,
 }) => {
   const { isBalanceHidden } = useFinancial();
   const { colors } = useAppTheme();
@@ -651,6 +653,36 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
         </TouchableOpacity>
       </View>
 
+      {/* 2C. BOTÓN DESTACADO DE ANÁLISIS DE EXTRACTO CON GEMINI IA */}
+      {onOpenAIStatement && (
+        <TouchableOpacity
+          style={[
+            styles.singleCardAddDeckHint,
+            {
+              backgroundColor: alpha(colors.success, 0.14),
+              borderColor: alpha(colors.success, 0.45),
+              marginTop: -4,
+              marginBottom: 14,
+              minHeight: 46,
+            },
+          ]}
+          onPress={() => onOpenAIStatement(activeCard)}
+          activeOpacity={0.85}
+        >
+          <CustomIcon name="Sparkles" size={17} color={colors.success} />
+          <Text
+            style={[
+              styles.singleCardAddDeckText,
+              { color: colors.textPrimary, fontWeight: '700' },
+            ]}
+            numberOfLines={1}
+          >
+            Analizar Extracto con IA (Sincronizar con el Banco)
+          </Text>
+          <CustomIcon name="ChevronRight" size={16} color={colors.success} />
+        </TouchableOpacity>
+      )}
+
       {/* 3. MAZO INFERIOR DE TARJETAS APILADAS (CARD STACK) */}
       {stackCards.length > 0 ? (
         <View style={styles.stackSectionWrapper} {...stackPanResponder.panHandlers}>
@@ -850,6 +882,29 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
                 <CustomIcon name="X" size={18} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
+
+            {onOpenAIStatement && (
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => {
+                  setContextMenuVisible(false);
+                  onOpenAIStatement(activeCard);
+                }}
+              >
+                <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.success, 0.18) }]}>
+                  <CustomIcon name="Sparkles" size={18} color={colors.success} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
+                    Analizar Extracto con IA (Gemini)
+                  </Text>
+                  <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
+                    Crea todos los movimientos y deja la tarjeta igual al banco
+                  </Text>
+                </View>
+                <CustomIcon name="ChevronRight" size={16} color={colors.success} />
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={styles.contextMenuItem}

@@ -11,7 +11,8 @@ import { StatementRepository } from './statementRepository.ts';
 import { CycleRepository } from './cycleRepository.ts';
 import { ReconciliationRepository } from './reconciliationRepository.ts';
 import { getIssuerPolicy } from '../../utils/issuerPolicies/index.ts';
-import { calculateCardCycleDates } from '../../utils/financialMath.ts';
+import { calculateCardCycleDates, generateAmortizationSchedule } from '../../utils/financialMath.ts';
+import type { GeminiExtractedStatement } from '../../utils/geminiService.ts';
 
 export const CardRepository = {
   async getAll(): Promise<CreditCard[]> {
@@ -865,5 +866,298 @@ export const CardRepository = {
       hasStatementSnapshot: !!latestStatement,
       hasOpeningBalance: await StatementRepository.hasOpeningBalance(card.id),
     };
+  },
+
+  /**
+   * Sincronización 100% Atómica del Extracto Analizado con IA (Gemini):
+   * Crea todos los movimientos/compras con sus cuotas pagadas y pendientes,
+   * registra el extracto oficial al corte (con intereses y cuota de manejo)
+   * y deja el cupo disponible, deuda total y facturado del mes idénticos a la app bancaria.
+   */
+  async syncCardFromAIStatementAtomic(
+    cardId: string,
+    extracted: GeminiExtractedStatement,
+    replaceExisting: boolean = true
+  ): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+
+    await db.withTransactionAsync(async () => {
+      const cardRow = await db.getFirstAsync<{
+        id: string;
+        credit_limit: number;
+        available_limit: number;
+        interest_rate_monthly: number;
+      }>('SELECT id, credit_limit, available_limit, interest_rate_monthly FROM credit_cards WHERE id = ?', [
+        cardId,
+      ]);
+
+      if (!cardRow) {
+        throw new Error('La tarjeta de crédito seleccionada no existe.');
+      }
+
+      if (replaceExisting) {
+        // Limpiar compras, cuotas, extractos y conciliaciones anteriores para dejar el estado exacto del extracto actual
+        const oldPurchases = await db.getAllAsync<{ id: string }>(
+          'SELECT id FROM card_purchases WHERE card_id = ?',
+          [cardId]
+        );
+        for (const op of oldPurchases) {
+          await db.runAsync('DELETE FROM card_installments WHERE purchase_id = ?', [op.id]);
+        }
+        await db.runAsync('DELETE FROM card_purchases WHERE card_id = ?', [cardId]);
+        await db.runAsync('DELETE FROM card_payment_allocations WHERE card_id = ?', [cardId]);
+        await db.runAsync('DELETE FROM card_reconciliations WHERE card_id = ?', [cardId]);
+        await db.runAsync('DELETE FROM card_statements WHERE card_id = ?', [cardId]);
+        await db.runAsync('DELETE FROM card_billing_cycles WHERE card_id = ?', [cardId]);
+        await db.runAsync(
+          "DELETE FROM transactions WHERE card_id = ? AND type IN ('card_purchase', 'card_opening_balance')",
+          [cardId]
+        );
+      }
+
+      // 1. Preparar lista de compras a insertar (incluyendo saldo anterior de capital si existe diferencia)
+      const allPurchasesToInsert = [...extracted.purchases];
+      if (extracted.previousUnitemizedPrincipal > 0) {
+        allPurchasesToInsert.push({
+          id: `ext-prev-${Date.now()}`,
+          description: 'Saldo Capital Anterior Extracto',
+          purchaseDate: extracted.statementDate,
+          originalAmount: extracted.previousUnitemizedPrincipal,
+          installmentsTotal: 1,
+          installmentsPaid: 0,
+          currentInstallmentNumber: 1,
+          monthlyQuota: extracted.previousUnitemizedPrincipal,
+          remainingPrincipal: extracted.previousUnitemizedPrincipal,
+          interestRateMonthly: 0,
+          categoryId: 'cat-financial',
+        });
+      }
+
+      let totalUnpaidPrincipalFromPurchases = 0;
+
+      // 2. Insertar cada compra y sus cuotas exactas
+      for (let i = 0; i < allPurchasesToInsert.length; i++) {
+        const p = allPurchasesToInsert[i];
+        const purchaseId = `purch-ai-${cardId}-${Date.now()}-${i}`;
+        const totalInst = Math.max(1, p.installmentsTotal);
+        const paidInst = Math.max(0, Math.min(totalInst - 1, p.installmentsPaid));
+        const remainingCount = Math.max(1, totalInst - paidInst);
+
+        // Calcular fecha de primera cuota retrocediendo según las cuotas ya pagadas
+        const baseDate = new Date((p.purchaseDate || extracted.statementDate) + 'T12:00:00');
+        if (isNaN(baseDate.getTime())) {
+          baseDate.setTime(Date.now());
+        }
+
+        // Si la fecha del extracto es la actual y ya lleva cuotas pagadas, proyectar cuotas pendientes desde el mes actual
+        const scheduleStartDate = new Date((extracted.statementDate || now.split('T')[0]) + 'T12:00:00');
+        scheduleStartDate.setMonth(scheduleStartDate.getMonth() - paidInst);
+        const firstInstallmentDateStr = scheduleStartDate.toISOString().split('T')[0];
+
+        const baseSchedule = generateAmortizationSchedule(
+          purchaseId,
+          p.originalAmount,
+          p.interestRateMonthly,
+          totalInst,
+          scheduleStartDate,
+          paidInst
+        );
+
+        // Ajustar el capital pendiente de las cuotas no pagadas para que sume exactamente p.remainingPrincipal
+        const unpaidCount = baseSchedule.filter((inst) => !inst.isPaid).length;
+        if (unpaidCount > 0 && p.remainingPrincipal > 0) {
+          const exactPrincipalPerUnpaid = Math.floor(p.remainingPrincipal / unpaidCount);
+          const remainder = p.remainingPrincipal - exactPrincipalPerUnpaid * unpaidCount;
+          let unpaidSeen = 0;
+          for (const inst of baseSchedule) {
+            if (!inst.isPaid) {
+              unpaidSeen++;
+              const principalForThis =
+                unpaidSeen === unpaidCount
+                  ? exactPrincipalPerUnpaid + remainder
+                  : exactPrincipalPerUnpaid;
+              const interestForThis = Math.max(0, (p.monthlyQuota || inst.totalAmount) - principalForThis);
+              inst.principalAmount = principalForThis;
+              inst.interestAmount = p.interestRateMonthly > 0 ? interestForThis : 0;
+              inst.totalAmount = principalForThis + inst.interestAmount;
+            }
+          }
+        }
+
+        const effectiveMonthlyQuota =
+          p.monthlyQuota > 0
+            ? p.monthlyQuota
+            : Math.round(p.remainingPrincipal / remainingCount);
+
+        await db.runAsync(
+          `INSERT INTO card_purchases (
+            id, card_id, description, category_id, amount, installments_total,
+            installments_paid, monthly_installment_amount, interest_rate_monthly,
+            first_installment_date, status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            purchaseId,
+            cardId,
+            p.description,
+            p.categoryId || 'cat-food',
+            p.originalAmount,
+            totalInst,
+            paidInst,
+            effectiveMonthlyQuota,
+            p.interestRateMonthly,
+            firstInstallmentDateStr,
+            'active',
+            p.purchaseDate || extracted.statementDate,
+          ]
+        );
+
+        for (const inst of baseSchedule) {
+          await db.runAsync(
+            `INSERT INTO card_installments (
+              id, purchase_id, installment_number, due_date, principal_amount,
+              interest_amount, total_amount, is_paid, paid_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              inst.id,
+              purchaseId,
+              inst.installmentNumber,
+              inst.dueDate,
+              inst.principalAmount,
+              inst.interestAmount,
+              inst.totalAmount,
+              inst.isPaid ? 1 : 0,
+              inst.paidDate || null,
+            ]
+          );
+          if (!inst.isPaid) {
+            totalUnpaidPrincipalFromPurchases += inst.principalAmount;
+          }
+        }
+
+        await db.runAsync(
+          `INSERT INTO transactions (
+            id, account_id, card_id, type, amount, category_id, description, notes, date,
+            to_account_id, card_purchase_id, card_installment_id, principal_amount, interest_amount, gmf_amount, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            `tx-purch-${purchaseId}`,
+            null,
+            cardId,
+            'card_purchase',
+            p.originalAmount,
+            p.categoryId || 'cat-food',
+            p.description,
+            `Sincronizado de Extracto IA • Cuota ${paidInst + 1} de ${totalInst}`,
+            p.purchaseDate || extracted.statementDate,
+            null,
+            purchaseId,
+            null,
+            p.remainingPrincipal,
+            0,
+            0,
+            now,
+          ]
+        );
+      }
+
+      // 3. Crear Ciclo de Facturación y Extracto Oficial al Corte (card_statements)
+      const cycleId = `cycle-ai-${cardId}-${Date.now()}`;
+      const startCycleDate = new Date((extracted.statementDate || now.split('T')[0]) + 'T12:00:00');
+      startCycleDate.setMonth(startCycleDate.getMonth() - 1);
+      const startCycleStr = startCycleDate.toISOString().split('T')[0];
+
+      await db.runAsync(
+        `INSERT INTO card_billing_cycles (
+          id, card_id, cycle_number, start_date, cut_off_date, payment_due_date, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          cycleId,
+          cardId,
+          1,
+          startCycleStr,
+          extracted.statementDate,
+          extracted.dueDate,
+          'closed',
+          now,
+        ]
+      );
+
+      const nonPrincipalCharges =
+        (extracted.currentInterest || 0) +
+        (extracted.lateInterest || 0) +
+        (extracted.handlingFee || 0) +
+        (extracted.taxesAndFees || 0);
+
+      const billedPrincipal = Math.max(0, extracted.totalStatementBalance - nonPrincipalCharges);
+      const statementId = `stmt-ai-${cardId}-${Date.now()}`;
+
+      await db.runAsync(
+        `INSERT INTO card_statements (
+          id, card_id, billing_cycle_id, statement_date, due_date, opening_balance,
+          purchases_total, advances_total, principal_total, current_interest, late_interest,
+          handling_fee, taxes_and_fees, collection_fee, total_statement_balance, minimum_payment_original,
+          statement_balance_paid, minimum_payment_paid, status, is_manual_snapshot, is_opening_balance, notes, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          statementId,
+          cardId,
+          cycleId,
+          extracted.statementDate,
+          extracted.dueDate,
+          0,
+          billedPrincipal,
+          0,
+          billedPrincipal,
+          extracted.currentInterest || 0,
+          extracted.lateInterest || 0,
+          extracted.handlingFee || 0,
+          extracted.taxesAndFees || 0,
+          0,
+          extracted.totalStatementBalance,
+          extracted.minimumPayment,
+          0,
+          0,
+          'open',
+          1,
+          0,
+          `Sincronizado automáticamente con Gemini IA (${allPurchasesToInsert.length} movimientos)`,
+          now,
+        ]
+      );
+
+      // 4. Actualizar cupo total, cupo disponible, fechas y tasas de la tarjeta para que coincida 100% con el banco
+      const finalCreditLimit = extracted.creditLimit > 0 ? extracted.creditLimit : cardRow.credit_limit;
+      const finalPrincipalDebt =
+        totalUnpaidPrincipalFromPurchases > 0
+          ? totalUnpaidPrincipalFromPurchases
+          : Math.max(0, extracted.totalCurrentDebt - nonPrincipalCharges);
+
+      const finalAvailableLimit =
+        extracted.availableLimit >= 0 &&
+        Math.abs(finalCreditLimit - finalPrincipalDebt - extracted.availableLimit) < 5000
+          ? extracted.availableLimit
+          : Math.max(0, finalCreditLimit - finalPrincipalDebt);
+
+      await db.runAsync(
+        `UPDATE credit_cards SET
+          credit_limit = ?,
+          available_limit = ?,
+          cut_off_day = ?,
+          payment_due_day = ?,
+          interest_rate_monthly = ?,
+          handling_fee = ?
+         WHERE id = ?`,
+        [
+          finalCreditLimit,
+          finalAvailableLimit,
+          extracted.cutOffDay || 15,
+          extracted.paymentDueDay || 5,
+          extracted.interestRateMonthly >= 0 ? extracted.interestRateMonthly : cardRow.interest_rate_monthly,
+          extracted.handlingFee >= 0 ? extracted.handlingFee : 0,
+          cardId,
+        ]
+      );
+    });
   },
 };
