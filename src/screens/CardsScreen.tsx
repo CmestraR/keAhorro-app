@@ -573,8 +573,8 @@ export const CardsScreen: React.FC = () => {
                   handleOpenAIStatement(target);
                 }}
               >
-                <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.success, 0.18) }]}>
-                  <CustomIcon name="Sparkles" size={18} color={colors.success} />
+                <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.primary, 0.18) }]}>
+                  <CustomIcon name="Sparkles" size={18} color={colors.primaryLight} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
@@ -584,7 +584,7 @@ export const CardsScreen: React.FC = () => {
                     Sube tu PDF para crear todos los movimientos e igualar al banco
                   </Text>
                 </View>
-                <CustomIcon name="ChevronRight" size={16} color={colors.success} />
+                <CustomIcon name="ChevronRight" size={16} color={colors.primaryLight} />
               </TouchableOpacity>
 
               <TouchableOpacity

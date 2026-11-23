@@ -659,8 +659,8 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
           style={[
             styles.singleCardAddDeckHint,
             {
-              backgroundColor: alpha(colors.success, 0.14),
-              borderColor: alpha(colors.success, 0.45),
+              backgroundColor: alpha(colors.primary, 0.16),
+              borderColor: alpha(colors.primaryLight, 0.45),
               marginTop: -4,
               marginBottom: 14,
               minHeight: 46,
@@ -669,7 +669,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
           onPress={() => onOpenAIStatement(activeCard)}
           activeOpacity={0.85}
         >
-          <CustomIcon name="FileText" size={17} color={colors.success} />
+          <CustomIcon name="FileText" size={17} color={colors.primaryLight} />
           <Text
             style={[
               styles.singleCardAddDeckText,
@@ -679,7 +679,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
           >
             Subir Extracto PDF con IA (Sincronizar Todo)
           </Text>
-          <CustomIcon name="ChevronRight" size={16} color={colors.success} />
+          <CustomIcon name="ChevronRight" size={16} color={colors.primaryLight} />
         </TouchableOpacity>
       )}
 
@@ -891,8 +891,8 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
                   onOpenAIStatement(activeCard);
                 }}
               >
-                <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.success, 0.18) }]}>
-                  <CustomIcon name="Sparkles" size={18} color={colors.success} />
+                <View style={[styles.contextMenuIconWrap, { backgroundColor: alpha(colors.primary, 0.18) }]}>
+                  <CustomIcon name="Sparkles" size={18} color={colors.primaryLight} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
@@ -902,7 +902,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
                     Sube tu PDF para crear todos los movimientos e igualar al banco
                   </Text>
                 </View>
-                <CustomIcon name="ChevronRight" size={16} color={colors.success} />
+                <CustomIcon name="ChevronRight" size={16} color={colors.primaryLight} />
               </TouchableOpacity>
             )}
 

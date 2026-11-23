@@ -64,6 +64,19 @@ export const InstallmentAmortizationModal: React.FC<InstallmentAmortizationModal
 
   const remainingPrincipal = Math.max(0, purchase.amount - totalPaidPrincipal);
 
+  // Evitar subtítulo duplicado (ej. "BANCOLOMBIA • BANCOLOMBIA")
+  const normalizedName = (card.name || '').trim();
+  const normalizedBank = (card.bankName || '').trim();
+  const isDuplicateCardSubtitle =
+    normalizedName.toLowerCase() === normalizedBank.toLowerCase() ||
+    normalizedName.toLowerCase().includes(normalizedBank.toLowerCase());
+  const headerSubtitleText = isDuplicateCardSubtitle
+    ? `${normalizedName} • CRÉDITO`
+    : `${normalizedName} • ${normalizedBank}`;
+
+  // Identificar la cuota pendiente más próxima (la primera sin pagar)
+  const nextPendingInstallmentId = installments.find((i) => !i.isPaid)?.id;
+
   const handlePayInstallment = (inst: CardInstallment) => {
     Alert.alert(
       'Confirmar Pago de Cuota',
@@ -113,7 +126,7 @@ export const InstallmentAmortizationModal: React.FC<InstallmentAmortizationModal
           {/* Header */}
           <View style={styles.header}>
             <View>
-              <Text style={styles.cardTag}>{card.name} • {card.bankName}</Text>
+              <Text style={styles.cardTag}>{headerSubtitleText}</Text>
               <Text style={styles.title}>{purchase.description}</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
@@ -193,38 +206,64 @@ export const InstallmentAmortizationModal: React.FC<InstallmentAmortizationModal
             <ActivityIndicator size="large" color={Theme.colors.primary} style={{ marginVertical: 30 }} />
           ) : (
             <ScrollView style={styles.scheduleList} showsVerticalScrollIndicator={false}>
-              {installments.map((inst) => (
-                <View key={inst.id} style={[styles.instRow, inst.isPaid && styles.instRowPaid]}>
-                  <View style={styles.instLeft}>
-                    <View style={[styles.quotaNumberBadge, inst.isPaid && styles.quotaPaidBadge]}>
-                      <Text style={styles.quotaNumberText}>#{inst.installmentNumber}</Text>
-                    </View>
-                    <View>
-                      <Text style={styles.instDate}>Vence: {formatDate(inst.dueDate)}</Text>
-                      <Text style={styles.instBreakdown}>
-                        Cap: {formatCurrency(inst.principalAmount, currency)} | Int: {formatCurrency(inst.interestAmount, currency)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.instRight}>
-                    <Text style={styles.instTotal}>{formatCurrency(inst.totalAmount, currency)}</Text>
-                    {inst.isPaid ? (
-                      <View style={styles.paidBadge}>
-                        <CustomIcon name="Check" size={12} color="#10B981" />
-                        <Text style={styles.paidText}>Pagada</Text>
-                      </View>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.payBtn}
-                        onPress={() => handlePayInstallment(inst)}
+              {installments.map((inst) => {
+                const isNextPending = !inst.isPaid && inst.id === nextPendingInstallmentId;
+                return (
+                  <View
+                    key={inst.id}
+                    style={[
+                      styles.instRow,
+                      inst.isPaid && styles.instRowPaid,
+                      isNextPending && styles.instRowNextPending,
+                    ]}
+                  >
+                    <View style={styles.instLeft}>
+                      <View
+                        style={[
+                          styles.quotaNumberBadge,
+                          inst.isPaid && styles.quotaPaidBadge,
+                          isNextPending && styles.quotaNextBadge,
+                        ]}
                       >
-                        <Text style={styles.payBtnText}>Pagar</Text>
-                      </TouchableOpacity>
-                    )}
+                        <Text style={styles.quotaNumberText}>#{inst.installmentNumber}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.instDate}>Vence: {formatDate(inst.dueDate)}</Text>
+                        <Text style={styles.instBreakdown} numberOfLines={1}>
+                          Cap: {formatCurrency(inst.principalAmount, currency)} | Int:{' '}
+                          {formatCurrency(inst.interestAmount, currency)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.instRight}>
+                      <Text style={styles.instTotal}>
+                        {formatCurrency(inst.totalAmount, currency)}
+                      </Text>
+                      {inst.isPaid ? (
+                        <View style={styles.paidBadge}>
+                          <CustomIcon name="Check" size={12} color="#10B981" />
+                          <Text style={styles.paidText}>Pagada</Text>
+                        </View>
+                      ) : isNextPending ? (
+                        <TouchableOpacity
+                          style={styles.payBtn}
+                          onPress={() => handlePayInstallment(inst)}
+                        >
+                          <Text style={styles.payBtnText}>Pagar</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.scheduledBtn}
+                          onPress={() => handlePayInstallment(inst)}
+                        >
+                          <Text style={styles.scheduledBtnText}>Programada</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </ScrollView>
           )}
         </TouchableOpacity>
@@ -381,6 +420,10 @@ const styles = StyleSheet.create({
     opacity: 0.65,
     backgroundColor: '#0F172A',
   },
+  instRowNextPending: {
+    borderColor: 'rgba(99, 102, 241, 0.55)',
+    backgroundColor: '#1E2336',
+  },
   instLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -395,6 +438,9 @@ const styles = StyleSheet.create({
   },
   quotaPaidBadge: {
     backgroundColor: 'rgba(16, 185, 129, 0.25)',
+  },
+  quotaNextBadge: {
+    backgroundColor: '#6366F1',
   },
   quotaNumberText: {
     color: '#FFFFFF',
@@ -444,5 +490,18 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: 'bold',
+  },
+  scheduledBtn: {
+    backgroundColor: '#1E2336',
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  scheduledBtnText: {
+    color: '#94A3B8',
+    fontSize: 10.5,
+    fontWeight: '600',
   },
 });
