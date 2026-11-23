@@ -578,10 +578,10 @@ export const CardsScreen: React.FC = () => {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
-                    Analizar Extracto con IA (Gemini)
+                    Subir Extracto PDF con IA (Gemini)
                   </Text>
                   <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
-                    Crea todos los movimientos y deja la tarjeta igual al banco
+                    Sube tu PDF para crear todos los movimientos e igualar al banco
                   </Text>
                 </View>
                 <CustomIcon name="ChevronRight" size={16} color={colors.success} />

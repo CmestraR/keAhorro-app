@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { File as ExpoFSFile } from 'expo-file-system';
 import { CreditCard } from '../../types/finance';
 import { useFinancial } from '../../context/FinancialContext';
 import { useAI } from '../../context/AIContext';
@@ -18,7 +19,6 @@ import { useAppTheme } from '../../context/ThemeContext';
 import {
   analyzeCardStatementWithGemini,
   GeminiExtractedStatement,
-  GeminiExtractedStatementPurchase,
 } from '../../utils/geminiService';
 import { formatCurrency, formatInputNumber, parseInputNumber } from '../../utils/formatters';
 import { alpha } from '../common/Theme';
@@ -26,23 +26,11 @@ import { CustomIcon } from '../common/CustomIcon';
 import { Text, TextInput } from '../common/AppText';
 import { TouchableOpacity } from '../common/Touchable';
 
-let ExpoAudio: any = null;
+let LegacyFileSystem: any = null;
 try {
-  const avPkg = require('expo-av');
-  ExpoAudio = avPkg?.Audio || null;
+  LegacyFileSystem = require('expo-file-system/legacy');
 } catch {
-  ExpoAudio = null;
-}
-
-let ExpoFileSystem: any = null;
-try {
-  ExpoFileSystem = require('expo-file-system/legacy');
-} catch {
-  try {
-    ExpoFileSystem = require('expo-file-system');
-  } catch {
-    ExpoFileSystem = null;
-  }
+  LegacyFileSystem = null;
 }
 
 interface AIStatementAnalyzerModalProps {
@@ -50,57 +38,6 @@ interface AIStatementAnalyzerModalProps {
   card: CreditCard | null;
   onClose: () => void;
 }
-
-const SAMPLE_STATEMENTS = [
-  {
-    label: 'Extracto Bancolombia',
-    color: '#F59E0B',
-    text: `EXTRACTO TARJETA DE CRÉDITO BANCOLOMBIA MASTERCARD
-Fecha de corte: 2026-11-15 | Fecha límite de pago: 2026-12-05
-Cupo Total: $8.000.000 | Cupo Disponible: $4.865.000
-Deuda Total Actual: $3.169.900
-Pago Total del Mes (Facturado al corte): $944.900 | Pago Mínimo: $215.000
-Tasa de interés mensual: 2.15% E.M.
-Intereses corrientes: $19.900 | Cuota de manejo: $15.000
-
-DETALLE DE MOVIMIENTOS Y COMPRAS A CUOTAS:
-1. 2026-09-10 | ALKOSTO HIPERAHORRO | Valor original: $2.400.000 | Cuota 3 de 12 | Cuota mes: $200.000 | Saldo capital pendiente: $2.000.000
-2. 2026-10-18 | MERCADOLIBRE COLOMBIA | Valor original: $900.000 | Cuota 2 de 6 | Cuota mes: $150.000 | Saldo capital pendiente: $750.000
-3. 2026-11-04 | EXITO WOW MERCADO | Valor original: $310.000 | Cuota 1 de 1 | Cuota mes: $310.000 | Saldo capital pendiente: $310.000
-4. 2026-11-11 | CREPES Y WAFFLES | Valor original: $75.000 | Cuota 1 de 1 | Cuota mes: $75.000 | Saldo capital pendiente: $75.000`,
-  },
-  {
-    label: 'Extracto Nu Colombia',
-    color: '#8B5CF6',
-    text: `ESTADO DE CUENTA TARJETA NU COLOMBIA (LA MORADITA)
-Fecha de corte: 2026-11-18 | Fecha límite de pago: 2026-12-03
-Cupo Total: $5.000.000 | Cupo Disponible: $3.450.000
-Deuda Total: $1.564.500
-Total a pagar este mes: $564.500 | Pago Mínimo: $110.000
-Tasa mensual: 2.08% E.M. | Intereses corrientes: $14.500 | Cuota de manejo: $0
-
-MOVIMIENTOS DEL PERIODO:
-- 2026-08-20 | IPHONE TIENDA MAC | Original: $2.000.000 | Cuota 4 de 10 | Cuota mensual: $200.000 | Saldo pendiente: $1.200.000
-- 2026-11-05 | D1 SAS SUPERMERCADO | Original: $185.000 | Cuota 1 de 1 | Cuota mensual: $185.000 | Saldo pendiente: $185.000
-- 2026-11-12 | UBER TRIP COLOMBIA | Original: $92.000 | Cuota 1 de 1 | Cuota mensual: $92.000 | Saldo pendiente: $92.000
-- 2026-11-14 | NETFLIX.COM | Original: $73.000 | Cuota 1 de 1 | Cuota mensual: $73.000 | Saldo pendiente: $73.000`,
-  },
-  {
-    label: 'Extracto RappiCard',
-    color: '#6366F1',
-    text: `EXTRACTO RAPPICARD VISA - RAPPIPAY
-Fecha de corte: 2026-11-20 | Fecha límite de pago: 2026-12-06
-Cupo Total: $6.000.000 | Cupo Disponible: $4.780.000
-Deuda Total Acumulada: $1.232.000
-Pago Total del Mes: $632.000 | Pago Mínimo: $125.000
-Intereses corrientes: $12.000 | Cuota de manejo: $0
-
-COMPRAS ACTIVAS:
-- 2026-10-08 | HOMECENTER SODIMAC | Original: $1.200.000 | Cuota 2 de 4 | Cuota mes: $300.000 | Saldo pendiente: $900.000
-- 2026-11-09 | RAPPI RESTAURANTES PRIME | Original: $195.000 | Cuota 1 de 1 | Cuota mes: $195.000 | Saldo pendiente: $195.000
-- 2026-11-16 | FARMATODO COLOMBIA | Original: $125.000 | Cuota 1 de 1 | Cuota mes: $125.000 | Saldo pendiente: $125.000`,
-  },
-];
 
 export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> = ({
   visible,
@@ -113,15 +50,17 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
   const { colors } = useAppTheme();
 
   const [selectedCardId, setSelectedCardId] = useState<string>(card?.id || '');
-  const [rawStatementText, setRawStatementText] = useState('');
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const [selectedFileSizeKb, setSelectedFileSizeKb] = useState<number | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(true);
+  const [showManualTextOption, setShowManualTextOption] = useState(false);
+  const [rawStatementText, setRawStatementText] = useState('');
 
   const [extracted, setExtracted] = useState<GeminiExtractedStatement | null>(null);
 
-  // Campos editables de las cifras oficiales del banco tras analizar
+  // Campos editables de las cifras oficiales del banco tras analizar el PDF
   const [creditLimitInput, setCreditLimitInput] = useState('');
   const [availableLimitInput, setAvailableLimitInput] = useState('');
   const [totalDebtInput, setTotalDebtInput] = useState('');
@@ -130,18 +69,19 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
   const [interestInput, setInterestInput] = useState('');
   const [handlingFeeInput, setHandlingFeeInput] = useState('');
 
-  const audioRecordingRef = useRef<any>(null);
-
   const activeCard =
     creditCards.find((c) => c.id === selectedCardId) || card || creditCards[0] || null;
 
   useEffect(() => {
     if (visible) {
       setSelectedCardId(card?.id || creditCards[0]?.id || '');
+      setSelectedFileName(null);
+      setSelectedFileSizeKb(null);
       setExtracted(null);
       setIsAnalyzing(false);
-      setIsRecordingVoice(false);
       setIsSyncing(false);
+      setShowManualTextOption(false);
+      setRawStatementText('');
     }
   }, [visible, card, creditCards]);
 
@@ -160,21 +100,144 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
     );
   };
 
-  const handleAnalyzeText = async (textOverride?: string) => {
+  /**
+   * Abre el selector nativo de archivos en Android/iOS (o input file en Web) para seleccionar el PDF (o imagen) del extracto,
+   * lee su contenido en Base64 y lo envía directamente a Gemini Multimodal.
+   */
+  const handlePickAndAnalyzeFile = async (mimeType: 'application/pdf' | 'image/*') => {
     if (!activeCard) return;
-    const textToUse = (textOverride ?? rawStatementText).trim();
-    if (textToUse.length < 10) {
+
+    if (!geminiApiKey.trim()) {
       showWarning(
-        'Texto del Extracto Requerido',
-        'Pega el texto de tu extracto PDF/App bancaria, usa el micrófono de voz o toca una plantilla de ejemplo.'
+        'Gemini API Key Requerida',
+        'Para que la IA pueda leer documentos PDF e imágenes de extractos bancarios, configura primero tu Gemini API Key.'
       );
+      onClose();
+      openAISettingsModal();
       return;
     }
 
+    // Caso Web: usar <input type="file"> del navegador
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = mimeType === 'application/pdf' ? 'application/pdf' : 'image/*';
+      input.onchange = async (e: any) => {
+        const file = e?.target?.files?.[0];
+        if (!file) return;
+        setSelectedFileName(file.name);
+        setSelectedFileSizeKb(Math.round(file.size / 1024));
+        setIsAnalyzing(true);
+        try {
+          const base64: string = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const resStr = String(reader.result || '');
+              const parts = resStr.split(',');
+              resolve(parts.length > 1 ? parts[1] : resStr);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+
+          const { data } = await analyzeCardStatementWithGemini({
+            fileBase64: base64,
+            fileMimeType: file.type || (mimeType === 'application/pdf' ? 'application/pdf' : 'image/jpeg'),
+            card: activeCard,
+            categories,
+            apiKey: geminiApiKey,
+            model: geminiModel,
+          });
+          populateEditableFields(data);
+        } catch {
+          showError('Error al leer PDF', 'No se pudo analizar el archivo seleccionado.');
+        } finally {
+          setIsAnalyzing(false);
+        }
+      };
+      input.click();
+      return;
+    }
+
+    // Caso Nativo Android / iOS: usar File.pickFileAsync de expo-file-system
+    try {
+      const picked = await ExpoFSFile.pickFileAsync(undefined, mimeType);
+      const pickedFile = Array.isArray(picked) ? picked[0] : picked;
+      if (!pickedFile) return;
+
+      const fileNameOrUri = (pickedFile as any).name || pickedFile.uri || 'Extracto_Bancario.pdf';
+      const rawName = decodeURIComponent(String(fileNameOrUri));
+      const displayName = rawName.split('/').pop()?.split('%2F').pop() || 'Extracto_Bancario.pdf';
+      setSelectedFileName(displayName);
+      if (pickedFile.size && pickedFile.size > 0) {
+        setSelectedFileSizeKb(Math.round(pickedFile.size / 1024));
+      } else {
+        setSelectedFileSizeKb(null);
+      }
+
+      setIsAnalyzing(true);
+      setExtracted(null);
+
+      let base64Data = '';
+      try {
+        base64Data = await pickedFile.base64();
+      } catch {
+        if (LegacyFileSystem?.readAsStringAsync && pickedFile.uri) {
+          base64Data = await LegacyFileSystem.readAsStringAsync(pickedFile.uri, {
+            encoding: LegacyFileSystem.EncodingType?.Base64 || 'base64',
+          });
+        }
+      }
+
+      if (!base64Data) {
+        showError(
+          'No se pudo leer el archivo',
+          'Asegúrate de elegir un archivo PDF válido descargado en tu teléfono.'
+        );
+        setIsAnalyzing(false);
+        return;
+      }
+
+      const detectedMime =
+        mimeType === 'application/pdf'
+          ? 'application/pdf'
+          : pickedFile.type || 'image/jpeg';
+
+      const { data } = await analyzeCardStatementWithGemini({
+        fileBase64: base64Data,
+        fileMimeType: detectedMime,
+        card: activeCard,
+        categories,
+        apiKey: geminiApiKey,
+        model: geminiModel,
+      });
+
+      populateEditableFields(data);
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      // Si el usuario simplemente cerró el selector de archivos sin elegir nada, no mostrar error
+      if (/cancel/i.test(msg)) {
+        return;
+      }
+      showError(
+        'Error al Analizar PDF',
+        'No fue posible procesar el documento PDF. Verifica que no tenga contraseña de apertura o intenta con una captura de pantalla.'
+      );
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleAnalyzeManualText = async () => {
+    if (!activeCard) return;
+    if (rawStatementText.trim().length < 10) {
+      showWarning('Texto Vacío', 'Pega el texto del extracto para analizarlo.');
+      return;
+    }
     setIsAnalyzing(true);
     try {
       const { data } = await analyzeCardStatementWithGemini({
-        statementText: textToUse,
+        statementText: rawStatementText.trim(),
         card: activeCard,
         categories,
         apiKey: geminiApiKey,
@@ -182,82 +245,7 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
       });
       populateEditableFields(data);
     } catch {
-      showError('Error de Análisis', 'No fue posible analizar el extracto.');
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  const startVoiceRecording = async () => {
-    if (!ExpoAudio || Platform.OS === 'web') {
-      showWarning(
-        'Micrófono Nativo',
-        'Pega el texto del extracto o usa el micrófono desde tu teléfono Android.'
-      );
-      return;
-    }
-
-    try {
-      const perm = await ExpoAudio.requestPermissionsAsync();
-      if (!perm?.granted) {
-        showWarning('Permiso de Micrófono', 'Concede permiso de micrófono para dictar el extracto.');
-        return;
-      }
-
-      await ExpoAudio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      if (audioRecordingRef.current) {
-        try {
-          await audioRecordingRef.current.stopAndUnloadAsync();
-        } catch {}
-        audioRecordingRef.current = null;
-      }
-
-      const { recording } = await ExpoAudio.Recording.createAsync(
-        ExpoAudio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      audioRecordingRef.current = recording;
-      setIsRecordingVoice(true);
-    } catch {
-      setIsRecordingVoice(false);
-    }
-  };
-
-  const stopVoiceAndAnalyze = async () => {
-    if (!activeCard || !audioRecordingRef.current) {
-      setIsRecordingVoice(false);
-      return;
-    }
-
-    setIsRecordingVoice(false);
-    setIsAnalyzing(true);
-
-    try {
-      const rec = audioRecordingRef.current;
-      audioRecordingRef.current = null;
-      await rec.stopAndUnloadAsync();
-      const uri = rec.getURI();
-
-      if (uri && ExpoFileSystem?.readAsStringAsync) {
-        const audioBase64 = await ExpoFileSystem.readAsStringAsync(uri, {
-          encoding: ExpoFileSystem.EncodingType?.Base64 || 'base64',
-        });
-
-        const { data } = await analyzeCardStatementWithGemini({
-          audioBase64,
-          audioMimeType: 'audio/mp4',
-          card: activeCard,
-          categories,
-          apiKey: geminiApiKey,
-          model: geminiModel,
-        });
-        populateEditableFields(data);
-      }
-    } catch {
-      showError('Error de Voz IA', 'No se pudo procesar el dictado del extracto.');
+      showError('Error', 'No fue posible analizar el texto.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -326,14 +314,14 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
     try {
       await syncCardFromAIStatement(activeCard.id, finalPayload, replaceExisting);
       showSuccess(
-        '✨ ¡Tarjeta Sincronizada con el Banco!',
-        `Se crearon ${finalPayload.purchases.length} compras activas en ${activeCard.name} y tus saldos (Disponible: ${formatCurrency(
+        '✨ ¡Tarjeta Sincronizada con tu PDF!',
+        `Se crearon ${finalPayload.purchases.length} movimientos en ${activeCard.name} y tus saldos (Disponible: ${formatCurrency(
           finalAvailableLimit,
           currency
         )}, Deuda Total: ${formatCurrency(
           finalTotalDebt,
           currency
-        )}, Facturado: ${formatCurrency(finalBilledMonth, currency)}) quedaron idénticos a tu app bancaria.`
+        )}, Facturado: ${formatCurrency(finalBilledMonth, currency)}) quedaron idénticos a tu extracto bancario.`
       );
       onClose();
     } catch (e: any) {
@@ -374,14 +362,14 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
                 end={{ x: 1, y: 1 }}
                 style={styles.headerIconBox}
               >
-                <CustomIcon name="Sparkles" size={20} color="#FFFFFF" />
+                <CustomIcon name="FileText" size={20} color="#FFFFFF" />
               </LinearGradient>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.headerTag, { color: colors.success }]}>
-                  SINCRONIZACIÓN BANCARIA CON GEMINI IA
+                  LECTOR DE EXTRACTOS PDF CON GEMINI IA
                 </Text>
                 <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-                  Analizar Extracto de Tarjeta
+                  Subir Extracto de Tarjeta (PDF)
                 </Text>
               </View>
             </View>
@@ -466,132 +454,135 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
                 <CustomIcon name="KeyRound" size={17} color={colors.warning} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.apiKeyWarningTitle, { color: colors.textPrimary }]}>
-                    Configura tu Gemini API Key para máxima precisión
+                    Configura tu Gemini API Key primero
                   </Text>
                   <Text style={[styles.apiKeyWarningSub, { color: colors.textSecondary }]}>
-                    Actualmente estás en modo local. Toca aquí para activar Gemini 3 Flash.
+                    Se requiere tu llave de Google AI Studio para que Gemini lea documentos PDF. Toca aquí para configurarla.
                   </Text>
                 </View>
                 <CustomIcon name="ChevronRight" size={16} color={colors.warning} />
               </TouchableOpacity>
             )}
 
-            {/* Paso 1: Ingresar o Dictar el Extracto */}
+            {/* Zona Protagonista: Subir Archivo PDF del Extracto */}
             <View
               style={[
-                styles.cardBox,
-                { backgroundColor: colors.surfaceCard, borderColor: colors.border },
+                styles.pdfUploadHeroCard,
+                {
+                  backgroundColor: colors.surfaceCard,
+                  borderColor: selectedFileName ? colors.success : alpha(colors.primary, 0.5),
+                },
               ]}
             >
-              <View style={styles.sectionHeaderRow}>
-                <CustomIcon name="FileText" size={17} color={colors.primaryLight} />
-                <Text style={[styles.sectionTitle, { color: colors.textPrimary, marginBottom: 0 }]}>
-                  1. Pega o Dicta tu Extracto ({activeCard.name})
-                </Text>
-              </View>
-              <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>
-                Copia y pega el texto de tu extracto PDF o de tu app bancaria (con tus compras a cuotas, cupo, pago del mes y deuda total), o mantén presionado el botón de micrófono para dictarlo:
-              </Text>
-
-              {/* Plantillas reales para probar en 1 toque */}
-              <Text style={[styles.sampleLabel, { color: colors.textMuted }]}>
-                Ejemplos reales (toca uno para cargar y analizar con IA):
-              </Text>
-              <View style={styles.samplesRow}>
-                {SAMPLE_STATEMENTS.map((sample, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[
-                      styles.sampleChip,
-                      {
-                        backgroundColor: alpha(sample.color, 0.14),
-                        borderColor: alpha(sample.color, 0.45),
-                      },
-                    ]}
-                    onPress={() => {
-                      setRawStatementText(sample.text);
-                      handleAnalyzeText(sample.text);
-                    }}
-                    disabled={isAnalyzing}
-                  >
-                    <CustomIcon name="Sparkles" size={13} color={sample.color} />
-                    <Text style={[styles.sampleChipText, { color: colors.textPrimary }]}>
-                      {sample.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <TextInput
+              <View
                 style={[
-                  styles.statementTextArea,
+                  styles.pdfBigIconCircle,
+                  { backgroundColor: alpha(colors.success, 0.16) },
+                ]}
+              >
+                {isAnalyzing ? (
+                  <ActivityIndicator size="large" color={colors.success} />
+                ) : (
+                  <CustomIcon name="FileUp" size={32} color={colors.success} />
+                )}
+              </View>
+
+              <Text style={[styles.pdfHeroTitle, { color: colors.textPrimary }]}>
+                {isAnalyzing
+                  ? 'Gemini está leyendo tu extracto PDF...'
+                  : selectedFileName
+                  ? selectedFileName
+                  : `Sube el Extracto PDF de ${activeCard.name}`}
+              </Text>
+
+              <Text style={[styles.pdfHeroSubtitle, { color: colors.textSecondary }]}>
+                {isAnalyzing
+                  ? 'Extrayendo todas las compras, cuotas pagadas/pendientes, intereses, cupo disponible y deuda total...'
+                  : selectedFileName
+                  ? `${
+                      selectedFileSizeKb ? `${selectedFileSizeKb} KB • ` : ''
+                    }Documento cargado. Puedes elegir otro PDF si lo deseas.`
+                  : 'Selecciona el archivo .PDF oficial descargado de tu banco (Bancolombia, Nu, RappiCard, Davivienda, BBVA...). Nota: si el PDF tiene clave, usa un PDF sin clave o sube captura de pantalla.'}
+              </Text>
+
+              {/* Botón Principal Grande: Seleccionar Archivo PDF */}
+              <TouchableOpacity
+                style={[
+                  styles.pickPdfPrimaryBtn,
+                  { backgroundColor: colors.success },
+                  isAnalyzing && { opacity: 0.6 },
+                ]}
+                onPress={() => handlePickAndAnalyzeFile('application/pdf')}
+                disabled={isAnalyzing}
+              >
+                <CustomIcon name="FileText" size={20} color="#FFFFFF" />
+                <Text style={styles.pickPdfPrimaryBtnText}>
+                  {selectedFileName ? 'Elegir Otro Archivo PDF' : 'Seleccionar Extracto en PDF'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Botón Secundario: Subir Captura / Imagen del Extracto */}
+              <TouchableOpacity
+                style={[
+                  styles.pickImageSecondaryBtn,
                   {
                     backgroundColor: colors.surfaceElevated,
-                    color: colors.textPrimary,
                     borderColor: colors.borderLight,
                   },
+                  isAnalyzing && { opacity: 0.6 },
                 ]}
-                placeholder="Pega aquí el texto del extracto PDF o escribe tus compras (ej: Cupo 5.000.000, Deuda total 1.800.000, Pago del mes 450.000. Compras: Alkosto $1.200.000 cuota 2 de 6, Mercado $250.000 a 1 cuota...)"
-                placeholderTextColor={colors.textMuted}
-                multiline
-                numberOfLines={6}
-                value={rawStatementText}
-                onChangeText={setRawStatementText}
-              />
+                onPress={() => handlePickAndAnalyzeFile('image/*')}
+                disabled={isAnalyzing}
+              >
+                <CustomIcon name="Image" size={17} color={colors.primaryLight} />
+                <Text style={[styles.pickImageSecondaryBtnText, { color: colors.textPrimary }]}>
+                  O subir captura de pantalla del extracto / app bancaria
+                </Text>
+              </TouchableOpacity>
 
-              {/* Botones: Analizar Texto con Gemini + Dictar Extracto por Voz */}
-              <View style={styles.inputActionsRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.analyzeBtn,
-                    { backgroundColor: colors.primary },
-                    isAnalyzing && { opacity: 0.65 },
-                  ]}
-                  onPress={() => handleAnalyzeText()}
-                  disabled={isAnalyzing}
-                >
-                  {isAnalyzing ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <CustomIcon name="Sparkles" size={17} color="#FFFFFF" />
-                  )}
-                  <Text style={styles.analyzeBtnText}>
-                    {isAnalyzing ? 'Analizando con Gemini...' : 'Analizar Extracto con IA'}
-                  </Text>
-                </TouchableOpacity>
+              {/* Opción plegable por si el PDF tiene contraseña de cédula y prefiere pegar el texto */}
+              <TouchableOpacity
+                style={styles.toggleManualTextLink}
+                onPress={() => setShowManualTextOption(!showManualTextOption)}
+              >
+                <Text style={[styles.toggleManualTextLinkLabel, { color: colors.textMuted }]}>
+                  {showManualTextOption
+                    ? '▲ Ocultar opción de pegar texto'
+                    : '¿Tu PDF tiene contraseña? Toca aquí para pegar el texto copiado'}
+                </Text>
+              </TouchableOpacity>
 
-                <Pressable
-                  onPressIn={startVoiceRecording}
-                  onPressOut={stopVoiceAndAnalyze}
-                  style={({ pressed }) => [
-                    styles.voiceHoldBtn,
-                    {
-                      backgroundColor: isRecordingVoice
-                        ? colors.danger
-                        : alpha(colors.success, 0.16),
-                      borderColor: isRecordingVoice ? colors.danger : colors.success,
-                    },
-                    pressed && { transform: [{ scale: 0.96 }] },
-                  ]}
-                >
-                  <CustomIcon
-                    name="Mic"
-                    size={18}
-                    color={isRecordingVoice ? '#FFFFFF' : colors.success}
-                  />
-                  <Text
+              {showManualTextOption && (
+                <View style={styles.manualTextCollapsible}>
+                  <TextInput
                     style={[
-                      styles.voiceHoldBtnText,
-                      { color: isRecordingVoice ? '#FFFFFF' : colors.success },
+                      styles.statementTextArea,
+                      {
+                        backgroundColor: colors.surfaceElevated,
+                        color: colors.textPrimary,
+                        borderColor: colors.borderLight,
+                      },
                     ]}
+                    placeholder="Abre tu PDF con tu clave, copia el texto de tus compras y saldos y pégalo aquí..."
+                    placeholderTextColor={colors.textMuted}
+                    multiline
+                    numberOfLines={4}
+                    value={rawStatementText}
+                    onChangeText={setRawStatementText}
+                  />
+                  <TouchableOpacity
+                    style={[styles.analyzeTextSmallBtn, { backgroundColor: colors.primary }]}
+                    onPress={handleAnalyzeManualText}
+                    disabled={isAnalyzing}
                   >
-                    {isRecordingVoice ? 'Suelta para Procesar...' : 'Mantén para Dictar'}
-                  </Text>
-                </Pressable>
-              </View>
+                    <CustomIcon name="Sparkles" size={15} color="#FFFFFF" />
+                    <Text style={styles.analyzeTextSmallBtnLabel}>Analizar Texto Pegado</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
 
-            {/* Paso 2: Resultado Extraído por Gemini (Saldos Oficiales + Todos los Movimientos) */}
+            {/* Paso 2: Resultado Extraído del PDF por Gemini (Saldos Oficiales + Todos los Movimientos) */}
             {extracted && (
               <View
                 style={[
@@ -606,7 +597,7 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
                   <CustomIcon name="CheckCircle2" size={19} color={colors.success} />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.resultBannerTitle, { color: colors.success }]}>
-                      ¡Extracto Analizado con Éxito!
+                      ¡Extracto PDF Analizado con Éxito!
                     </Text>
                     <Text style={[styles.resultBannerSub, { color: colors.textSecondary }]}>
                       {extracted.resumenHumano}
@@ -616,7 +607,7 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
 
                 {/* A. Cifras Oficiales que dejarán la tarjeta igual al banco */}
                 <Text style={[styles.subSectionHeading, { color: colors.textPrimary }]}>
-                  A. Estado Oficial de la Tarjeta (Editable):
+                  A. Estado Oficial de la Tarjeta (Verificado del PDF):
                 </Text>
 
                 <View style={styles.grid2Cols}>
@@ -761,9 +752,9 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
                   </View>
                 </View>
 
-                {/* B. Lista de Todos los Movimientos / Compras a Cuotas Detectados */}
+                {/* B. Lista de Todos los Movimientos / Compras a Cuotas Detectados en el PDF */}
                 <Text style={[styles.subSectionHeading, { color: colors.textPrimary, marginTop: 8 }]}>
-                  B. Movimientos y Compras que se Crearán ({extracted.purchases.length}):
+                  B. Movimientos Extraídos del PDF ({extracted.purchases.length}):
                 </Text>
 
                 <View style={styles.purchasesListWrap}>
@@ -863,10 +854,10 @@ export const AIStatementAnalyzerModal: React.FC<AIStatementAnalyzerModalProps> =
                 >
                   <View style={{ flex: 1, marginRight: 10 }}>
                     <Text style={[styles.replaceSwitchTitle, { color: colors.textPrimary }]}>
-                      Dejar tarjeta exactamente igual al extracto
+                      Dejar tarjeta exactamente igual al extracto PDF
                     </Text>
                     <Text style={[styles.replaceSwitchSub, { color: colors.textSecondary }]}>
-                      Reemplaza los movimientos previos de esta tarjeta por los del extracto analizado para evitar duplicados.
+                      Reemplaza los movimientos previos de esta tarjeta por los del PDF analizado para evitar duplicados.
                     </Text>
                   </View>
                   <Switch
@@ -997,87 +988,99 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 1,
   },
-  cardBox: {
-    borderRadius: 16,
-    padding: 15,
-    borderWidth: 1,
-    gap: 10,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   sectionTitle: {
     fontSize: 15,
     fontWeight: 'bold',
     marginBottom: 4,
   },
-  sectionSub: {
-    fontSize: 13,
-    lineHeight: 18,
+  pdfUploadHeroCard: {
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    gap: 10,
   },
-  sampleLabel: {
+  pdfBigIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  pdfHeroTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  pdfHeroSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  pickPdfPrimaryBtn: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+  },
+  pickPdfPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  pickImageSecondaryBtn: {
+    width: '100%',
+    minHeight: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+  },
+  pickImageSecondaryBtnText: {
     fontSize: 13,
     fontWeight: '600',
   },
-  samplesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  toggleManualTextLink: {
+    paddingVertical: 6,
   },
-  sampleChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  sampleChipText: {
+  toggleManualTextLinkLabel: {
     fontSize: 13,
-    fontWeight: '700',
+    textDecorationLine: 'underline',
+    textAlign: 'center',
+  },
+  manualTextCollapsible: {
+    width: '100%',
+    gap: 8,
+    marginTop: 4,
   },
   statementTextArea: {
     borderRadius: 12,
     borderWidth: 1,
     padding: 12,
     fontSize: 13,
-    minHeight: 115,
+    minHeight: 90,
     textAlignVertical: 'top',
   },
-  inputActionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  analyzeBtn: {
-    flex: 1.3,
-    minHeight: 48,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    paddingHorizontal: 12,
-  },
-  analyzeBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  voiceHoldBtn: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1.5,
+  analyzeTextSmallBtn: {
+    minHeight: 42,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingHorizontal: 10,
   },
-  voiceHoldBtnText: {
+  analyzeTextSmallBtnLabel: {
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 'bold',
   },

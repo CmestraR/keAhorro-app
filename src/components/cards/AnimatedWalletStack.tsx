@@ -669,7 +669,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
           onPress={() => onOpenAIStatement(activeCard)}
           activeOpacity={0.85}
         >
-          <CustomIcon name="Sparkles" size={17} color={colors.success} />
+          <CustomIcon name="FileText" size={17} color={colors.success} />
           <Text
             style={[
               styles.singleCardAddDeckText,
@@ -677,7 +677,7 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
             ]}
             numberOfLines={1}
           >
-            Analizar Extracto con IA (Sincronizar con el Banco)
+            Subir Extracto PDF con IA (Sincronizar Todo)
           </Text>
           <CustomIcon name="ChevronRight" size={16} color={colors.success} />
         </TouchableOpacity>
@@ -896,10 +896,10 @@ export const AnimatedWalletStack: React.FC<AnimatedWalletStackProps> = ({
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.contextMenuItemTitle, { color: colors.textPrimary }]}>
-                    Analizar Extracto con IA (Gemini)
+                    Subir Extracto PDF con IA (Gemini)
                   </Text>
                   <Text style={[styles.contextMenuItemSub, { color: colors.textSecondary }]}>
-                    Crea todos los movimientos y deja la tarjeta igual al banco
+                    Sube tu PDF para crear todos los movimientos e igualar al banco
                   </Text>
                 </View>
                 <CustomIcon name="ChevronRight" size={16} color={colors.success} />
